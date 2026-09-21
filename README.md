@@ -21,11 +21,17 @@ See [Credits](#credits).
 | --- | --- |
 | Two fingers right on a card | throw it away - past a third of the way, or with a flick; short of that it springs back |
 | Two fingers right on a stack's front card | throw the whole stack |
-| Two fingers left on a card | pull the Notifications panel in behind it |
+| Two fingers left on a card | reveal the whole Notifications panel, pulled in behind the card as your fingers move |
 | Two fingers onto the touchpad over its right edge | pull in the Notifications panel, following your fingers, as on a Mac |
 | Two fingers up and down | scroll a list taller than the screen |
-| Mouse: press and drag | the same carries as two fingers, for a mouse |
+| Mouse: drag a card right | throw it away, as with two fingers |
+| Mouse: drag a card left | reveal the whole Notifications panel |
+| Mouse: drag the panel heading right | put the panel away |
 | Pointer into the top-right corner | the panel heading peeks in; run down the right edge onto it and the panel opens - no click |
+
+**Never read this far?** Push any notification to the left - with two fingers
+or by dragging it with the mouse - and the whole Notifications panel comes in
+behind it. That is the one gesture worth knowing.
 
 A third finger arriving late turns an edge swipe back into nothing, so
 three-finger workspace swipes never catch the panel.
@@ -99,6 +105,14 @@ step 1, then enable Omapager in step 2.
 ### 1. Install
 
 #### Via the marketplace
+
+<!-- marketplace-pending -->
+> [!CAUTION]
+> **Not live yet.** Omapager Pro is submitted to the Omarchy Plugin Marketplace
+> and waiting for approval, so it won't show up there yet. Install it
+> [via Git](#via-git) in the meantime - the command below works as soon as it is
+> listed.
+<!-- /marketplace-pending -->
 
 Find Omapager Pro in the [Omarchy Plugin Marketplace](https://omarchyplugins.com/)
 and run its install command:
