@@ -137,6 +137,27 @@ SCENES = {
         dict(web="github.com", summary="Review requested",
              body="axiomhq/axiom \u00b7 sub-second histograms (#4412)"),
     ],
+    # X, piling up about the plugin itself - one stack of one source, which is
+    # the shape a busy social account actually produces. Every account and
+    # every word is invented for the screenshot. The icon is the current X
+    # mark, shipped with the demo rather than fetched: a site's favicon is
+    # whatever it served that week.
+    "x": [
+        dict(web="x.com", image="x.png", summary="Trending in Linux",
+             body="#OmapagerPro \u00b7 1,204 posts", gap=0.6),
+        dict(web="x.com", image="x.png", summary="@wayland_wendy followed you",
+             body="Wendy builds compositors for fun and ships them on Fridays", gap=0.6),
+        dict(web="x.com", image="x.png", summary="@rice_daily quoted your post",
+             body="notification centre on linux finally feels native. swipe in from the edge, swipe away with two fingers", gap=0.6),
+        dict(web="x.com", image="x.png", summary="52 people liked your post",
+             body="\u201cOmapager Pro: two fingers from the right edge pulls in everything you missed\u201d", gap=0.6),
+        dict(web="x.com", image="x.png", summary="@tilingwm_tom replied",
+             body="wait, the panel follows your fingers?? how", gap=0.6),
+        dict(web="x.com", image="x.png", summary="@hyprnerd reposted your post",
+             body="swipe a whole stack away in one go. this is how notifications should work", gap=0.6),
+        dict(web="x.com", image="x.png", summary="Elon Musk",
+             body="commented on your post: cool"),
+    ],
     # Off the clock.
     "personal": [
         dict(app="Spotify", icon="spotify", summary="Now playing",
@@ -269,6 +290,11 @@ def send(n, timeout=None):
     if n.get("web"):
         body = web(n["web"], body)
     cmd = ["notify-send", "-a", who["app"], n["summary"], body]
+    if n.get("image"):
+        # The sender's own picture, the way a site's notification carries
+        # one: shipped with the demo, so it is the same in every screenshot.
+        demo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "demo")
+        cmd += ["-h", "string:image-path:" + os.path.abspath(os.path.join(demo, n["image"]))]
     if who["icon"]:
         cmd += ["-i", who["icon"], "-h", "string:desktop-entry:" + who["icon"]]
     if n.get("urgency"):
