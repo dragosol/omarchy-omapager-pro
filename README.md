@@ -1,21 +1,47 @@
-<img src="assets/title.png" width="1266" alt="Omapager">
+# Omapager Pro
 
-<!--
- ▄█████▄    ▄███████████▄   ▄███████   ▄███████▄  ▄███████    ▄█████▄   ▄████████  ▄███████▄
-███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███
-███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███        ███   ███  ███   ███
-███   ███  ███   ███   ███  ███▄▄▄███  ███▄▄▄███  ███▄▄▄███  ███ ▄▄▄▄▄  ███▄▄▄     ███▄▄▄██▀
-███   ███  ███   ███   ███  ███▀▀▀███  ███▀▀▀▀▀▀  ███▀▀▀███  ███ ▀▀███  ███▀▀▀     ███▀▀▀██▄
-███   ███  ███   ███   ███  ███   ███  ███        ███   ███  ███   ███  ███   ███  ███   ███
-███   ███  ███   ███   ███  ███   ███  ███        ███   ███  ███   ███  ███   ███  ███   ███
- ▀█████▀    ▀█   ███   █▀   ███   █▀    ▀█        ███   █▀    ▀█████▀    ▀███████   ███   █▀
--->
+A notification daemon for [Omarchy](https://omarchy.org) that you use with your
+hands: swipe notifications away with two fingers, pull in everything you missed
+from the edge of the touchpad, and browse it all in a Notifications panel of
+stacks that open as you point at them. Replaces the built-in notification
+service and follows your Omarchy theme, down to the window border.
 
-A notification daemon for [Omarchy](https://omarchy.org) with grouped
-notifications, inline actions and screen-sharing detection. Replaces the built-in
-notification service and follows your Omarchy theme.
+<img src="preview.png" width="640" alt="The Notifications panel with stacks from Slack, X, WhatsApp and Google Calendar">
 
-<img src="assets/native-card-2x.png" width="410" alt="Original demo notifications from Slack, WhatsApp and GitHub with their source icons">
+Omapager Pro started as a fork of Neil Jagdish Patel's
+[Omapager](https://github.com/njpatel/omapager) and keeps everything it does -
+grouping, inline actions, codes, replies, snoozing, screen-sharing detection.
+See [Credits](#credits).
+
+## What Omapager Pro adds
+
+**Gestures, everywhere a notification is.**
+
+| | |
+| --- | --- |
+| Two fingers right on a card | throw it away - past a third of the way, or with a flick; short of that it springs back |
+| Two fingers right on a stack's front card | throw the whole stack |
+| Two fingers left on a card | pull the Notifications panel in behind it |
+| Two fingers onto the touchpad over its right edge | pull in the Notifications panel, following your fingers, as on a Mac |
+| Two fingers up and down | scroll a list taller than the screen |
+| Mouse: press and drag | the same carries as two fingers, for a mouse |
+| Pointer into the top-right corner | the panel heading peeks in; run down the right edge onto it and the panel opens - no click |
+
+A third finger arriving late turns an edge swipe back into nothing, so
+three-finger workspace swipes never catch the panel.
+
+**The Notifications panel.** Everything on screen now plus everything you
+missed - notifications that timed out, or were held back by a snooze or Do Not
+Disturb. What you dismissed stays gone. Notifications already on screen travel
+into the panel as it slides in; one stack per source, opened by resting the
+pointer on its front card; **Clear stack** and **Clear all**; swipe the heading
+to put it away. It closes itself once you leave it.
+
+**Quieter cards.** The card border is your window border - the theme's active
+border colour or gradient, and Hyprland's border width - with regular-weight
+titles, soft count badges and unoutlined controls. Stacks show their count, open
+decks hold long messages to three lines until you rest on one, and decks taller
+than the screen scroll instead of running off it.
 
 ## Features
 
@@ -82,62 +108,78 @@ step 1, then enable Omapager in step 2.
 
 ### 1. Install
 
-#### Releases via the marketplace
+#### Via the marketplace
 
-Find Omapager in the [Omarchy Plugin Marketplace](https://omarchyplugins.com/)
+Find Omapager Pro in the [Omarchy Plugin Marketplace](https://omarchyplugins.com/)
 and run its install command:
 
 ```bash
-omarchy plugin add https://github.com/njpatel/omapager.git
+omarchy plugin add https://github.com/dragosol/omarchy-omapager-pro.git
 ```
 
-Until the new stable release is approved, the marketplace installs Git HEAD.
-
-#### Edge via Git
-
-Clone `main` for the latest changes between releases:
+#### Via Git
 
 ```bash
-git clone --branch main https://github.com/njpatel/omapager.git \
-  ~/.config/omarchy/plugins/njpatel.omapager
+git clone https://github.com/dragosol/omarchy-omapager-pro.git \
+  ~/.config/omarchy/plugins/io.github.dragosol.omapager-pro
 ```
 
-### 2. Enable Omapager
+### 2. Enable Omapager Pro
 
-After either installation method, disable the built-in notification service and
-enable Omapager. Only one notification daemon can run at a time.
+Disable the built-in notification service - or the original Omapager, if you
+have it - and enable Omapager Pro. Only one notification daemon can run at a time.
 
 ```bash
 omarchy-shell shell rescanPlugins
 omarchy plugin disable omarchy.notifications
-omarchy plugin enable njpatel.omapager --section center --after omarchy.indicators
+omarchy plugin enable io.github.dragosol.omapager-pro --section center --after omarchy.indicators
 omarchy restart shell
 ```
+
+Omapager Pro keeps its state where Omapager does, so switching over keeps your
+history, snoozes and icons.
+
+### 3. Optional: the edge swipe
+
+Pulling the panel in from the touchpad's edge reads finger positions from the
+touchpad itself, which needs read access to it. One command, once:
+
+```bash
+sudo ~/.config/omarchy/plugins/io.github.dragosol.omapager-pro/install-touchpad-access.sh
+omarchy restart shell
+```
+
+It installs a single udev rule, `/etc/udev/rules.d/70-omapager-touchpad.rules`,
+that gives the logged-in user access to devices udev has classified as
+touchpads - not the keyboard, not other input - through the standard
+systemd-logind `uaccess` handoff. The reader runs in the same Bubblewrap sandbox
+as the other helpers, with that one device node and nothing else. `--remove`
+takes the rule away. Everything else works without it, including the hot
+corner, left pulls and the `missed` command.
 
 ### Updates
 
-Use the marketplace for release updates. For an edge checkout:
-
 ```bash
-git -C ~/.config/omarchy/plugins/njpatel.omapager pull --ff-only
+git -C ~/.config/omarchy/plugins/io.github.dragosol.omapager-pro pull --ff-only
 omarchy restart shell
 ```
 
-[Release notes](https://github.com/njpatel/omapager/releases) describe each update.
 Do not use `omarchy refresh shell`, which resets your shell configuration.
 
-### Remove Omapager
+### Remove Omapager Pro
 
 ```bash
-omarchy plugin disable njpatel.omapager
-omarchy plugin remove njpatel.omapager
+omarchy plugin disable io.github.dragosol.omapager-pro
+omarchy plugin remove io.github.dragosol.omapager-pro
 omarchy plugin enable omarchy.notifications
 omarchy restart shell
+sudo /path/to/install-touchpad-access.sh --remove   # only if you installed the rule
 ```
 
 Removal keeps notification history, icon cache and other state in
 `~/.local/state/omarchy/omapager/`. Delete that directory separately if you also
-want to remove the stored data.
+want to remove the stored data. A per-source icon you dropped into
+`~/.config/omarchy/omapager/icons/` stays too.
 
 ## Settings
 
@@ -146,7 +188,7 @@ toggle countdown animation or control screen-sharing snooze suggestions.
 
 <img src="assets/display-settings-2x.png" width="420" alt="Notification preferences for display, countdown animation and screen-sharing snooze suggestions">
 
-Changes save to the `njpatel.omapager` bar-widget entry in
+Changes save to the `io.github.dragosol.omapager-pro` bar-widget entry in
 `~/.config/omarchy/shell.json`. You can edit the other options there too.
 `edgeSpacing`, `fetchRemoteIcons` and `requireSandbox` are config-only. Defaults
 below apply to new configurations, not choices you have already saved.
@@ -160,6 +202,7 @@ below apply to new configurations, not choices you have already saved.
 | `displayName` | empty | Output for specific mode, such as `DP-1`. Omapager keeps the selection while disconnected and falls back to a connected display. |
 | `edgeSpacing` | `12` | Gap from the bar and screen edges, in logical pixels from 0 to 64. Config-only. |
 | `showCountdown` | `false` | Show the time-remaining animation. Turning it off does not change expiry. |
+| `edgeSwipe` | `true` | Pull the Notifications panel in with two fingers from the touchpad's right edge. Needs the one-time touchpad rule; see [install step 3](#3-optional-the-edge-swipe). |
 | `offerSnoozeWhenSharing` | `true` | Suggest a timed snooze when portal sharing starts. Never mute automatically. |
 | `fontScale` | `100` | Notification text size as a percentage, from 75 to 200. Does not resize bar or panel text. |
 | `actionsAlign` | `right` | Align action buttons to the `right` or `left`. |
@@ -184,7 +227,7 @@ Add options to the existing widget entry. This example is not a complete
 
 ```json
 {
-  "id": "njpatel.omapager",
+  "id": "io.github.dragosol.omapager-pro",
   "edgeSpacing": 12,
   "showCountdown": false,
   "fontScale": 100,
@@ -282,6 +325,10 @@ o.bind("SUPER + CTRL + ALT + comma", "Snooze all notifications for an hour",
 -- Toggle the notification panel.
 o.bind("SUPER + CTRL + SHIFT + comma", "Notification options",
        "omarchy-shell omapager.panel toggle")
+
+-- The Notifications panel, for a keyboard.
+o.bind("SUPER + SHIFT + N", "Notifications",
+       "omarchy-shell omapager missed")
 ```
 
 ## Scripting
@@ -302,6 +349,10 @@ omarchy-shell omapager snoozes          what is snoozed, and until when
 omarchy-shell omapager stack source     switch stacking mode
 omarchy-shell omapager align right      switch which end the buttons sit at
 omarchy-shell omapager probe            show runtime configuration and helper status as JSON
+omarchy-shell omapager missed           open or close the Notifications panel ("open" / "close")
+omarchy-shell omapager swipe 200        throw the front card as a 200px swipe would
+omarchy-shell omapager scroll 120       scroll a deck taller than the screen
+omarchy-shell omapager edge "begin"     drive the edge swipe by hand: begin, move <p>, end <p> <v>, cancel
 
 omarchy-shell omapager.panel toggle     the panel
 omarchy-shell omapager.panel expand x   open a source's held list, as clicking it would
@@ -317,6 +368,7 @@ bin/omapager-demo --scene routing       # where a click sends you, per source
 bin/omapager-demo --scene reply --keep --timeout 30000  # local inline-reply demo
 bin/omapager-demo --scene close         # dismiss a stack without moving the pointer
 bin/omapager-demo --replay 40           # your own notifications, re-sent
+bin/omapager-demo --scene showcase      # a mix of senders and stacks, for a screenshot
 bin/omapager-demo --list
 ```
 
@@ -408,9 +460,21 @@ See [Security](#security) for icon-fetching and sandbox behaviour.
 
 ## Contributing
 
-See [how we review contributions](docs/DEVELOPING.md#how-we-review-contributions)
-and the [development guide](docs/DEVELOPING.md) for working on omapager.
+Issues and pull requests are welcome at
+[dragosol/omarchy-omapager-pro](https://github.com/dragosol/omarchy-omapager-pro).
+The [development guide](docs/DEVELOPING.md) covers how the daemon is built and
+tested; `tests/virtual_touchpad.py` drives real two-finger swipes through
+libinput and Hyprland for testing gestures.
 
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+## Credits
+
+Omapager Pro is built on [Omapager](https://github.com/njpatel/omapager) by
+Neil Jagdish Patel, MIT-licensed; his copyright notice is kept in
+[LICENSE](LICENSE). The notification daemon, grouping, inline actions, replies,
+snoozing, the security model and most of what is described under Settings and
+Security are his work. The gestures, the Notifications panel, the hot corner and
+the card styling are Omapager Pro's.
