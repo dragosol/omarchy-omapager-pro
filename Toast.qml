@@ -63,9 +63,25 @@ Item {
   readonly property color bodyColor: Qt.darker(Color.notifications.text, 1.15)
   readonly property color accentColor: critical ? Color.urgent
                                                : (row.urgency === 0 ? dimColor : Color.notifications.countdown)
-  readonly property var cardBorderSpec: Border.surfaceSpec(
-      "notifications", "border", Color.notifications.border,
-      Math.max(1, Style.space(2)))
+  // A hairline, not the theme's full border. Every card on screen wearing a
+  // two-pixel outline in the border colour turned a deck into a stack of
+  // boxes; the outline is what you notice, not the message. The card you are
+  // dealing with - under the pointer, or the front of a shut stack - gets a
+  // little more of it, and an urgent one keeps a real edge.
+  readonly property bool outlined: hovered || (!expanded && place.front)
+  readonly property var noBorder: ({ top: 0, right: 0, bottom: 0, left: 0 })
+  readonly property var flat: ({ color: "transparent", widths: noBorder,
+                                 gradient: { colors: [], angle: 0, enabled: false } })
+  readonly property var cardBorderSpec: ({
+    color: critical ? Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.8)
+                    : Qt.rgba(Color.notifications.border.r, Color.notifications.border.g,
+                              Color.notifications.border.b, outlined ? 0.42 : 0.18),
+    widths: { top: 1, right: 1, bottom: 1, left: 1 },
+    gradient: { colors: [], angle: 0, enabled: false }
+  })
+  // What a quiet control is filled with instead of outlined.
+  readonly property color softFill: Qt.rgba(Color.notifications.text.r, Color.notifications.text.g,
+                                            Color.notifications.text.b, 0.09)
   readonly property bool hasBody: String(row.body || "").length > 0
   readonly property real contentPaddingY: hasBody ? Style.space(10) : Style.space(7)
   // A card behind the front one in a collapsed deck is a shape, not a message:
@@ -404,7 +420,7 @@ Item {
       // reads as broken rather than as minimal.
       Item {
         id: thumb
-        width: Style.space(40)
+        width: Style.space(32)
         height: width
         // Centred against the text beside it: pinned to the top, it floats
         // above nothing on a two-line card. Against the *text*, not against the
@@ -444,9 +460,8 @@ Item {
           anchors.fill: parent
           radius: Style.cornerRadius
           visible: picture.status !== Image.Ready
-          color: Style.normalFillFor(Color.notifications.text, card.accentColor, Color.urgent)
-          borderSpec: Border.controlSpec("normal", Color.notifications.text,
-                                         card.accentColor, Color.urgent)
+          color: card.softFill
+          borderSpec: card.flat
 
           Text {
             textFormat: Text.PlainText
@@ -522,7 +537,8 @@ Item {
             color: card.critical ? Color.urgent : Color.notifications.text
             font.family: "Liberation Sans"
             font.pixelSize: Style.font.title * card.fontScale
-            font.bold: true
+            // Regular weight. The title is already the brightest thing on the
+            // card; bold on top of that made every card shout its headline.
             // Larger fonts should wrap the summary, not hide it after a few words.
             // Bound unusually long titles just as we bound the message body.
             wrapMode: Text.Wrap
@@ -565,15 +581,13 @@ Item {
             anchors.rightMargin: Style.space(6)
             anchors.verticalCenter: title.verticalCenter
             visible: card.stands > 1
-            readonly property var badgeBorderSpec: Border.controlSpec(
-                "normal", Color.notifications.text, card.accentColor, Color.urgent)
+            readonly property var badgeBorderSpec: card.flat
             width: badgeText.implicitWidth + Style.spacing.sm * 2
                    + Border.left(badgeBorderSpec) + Border.right(badgeBorderSpec)
             height: badgeText.implicitHeight + Style.spacing.xxs * 2
                     + Border.top(badgeBorderSpec) + Border.bottom(badgeBorderSpec)
             radius: Style.cornerRadius
-            color: Style.normalFillFor(Color.notifications.text, card.accentColor,
-                                       Color.urgent)
+            color: card.softFill
             borderSpec: badgeBorderSpec
 
             Text {
@@ -621,7 +635,7 @@ Item {
                 id: shut
                 anchors.centerIn: parent
                 text: "\u2715"
-                bordered: true
+                bordered: false
                 horizontalPadding: Style.space(4)
                 verticalPadding: Style.space(2)
                 implicitWidth: implicitHeight

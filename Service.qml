@@ -3127,8 +3127,13 @@ Item {
             height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
             radius: Style.cornerRadius
             color: Color.notifications.background
-            borderSpec: Border.surfaceSpec("notifications", "border", Color.notifications.border,
-                                           Math.max(1, Style.space(2)))
+            // The cards' own hairline, so the heading reads as one of them.
+            borderSpec: ({
+              color: Qt.rgba(Color.notifications.border.r, Color.notifications.border.g,
+                             Color.notifications.border.b, 0.18),
+              widths: { top: 1, right: 1, bottom: 1, left: 1 },
+              gradient: { colors: [], angle: 0, enabled: false }
+            })
 
             Row {
               anchors.left: parent.left
@@ -3144,7 +3149,6 @@ Item {
                 color: Color.notifications.text
                 font.family: "Liberation Sans"
                 font.pixelSize: Style.font.title * 1.3 * service.fontScale
-                font.bold: true
               }
 
               Text {
@@ -3168,7 +3172,7 @@ Item {
                 id: missedClear
                 visible: service.missedCount > 0
                 text: "Clear all"
-                bordered: true
+                bordered: false
                 foreground: Color.notifications.text
                 fontFamily: Style.font.family
                 fontSize: Style.font.bodySmall * service.fontScale
@@ -3178,7 +3182,7 @@ Item {
               }
               Button {
                 text: "✕"
-                bordered: true
+                bordered: false
                 implicitWidth: implicitHeight
                 foreground: Color.notifications.text
                 fontFamily: Style.font.family
