@@ -1139,8 +1139,7 @@ Item {
       waitForEnd: true
       onStreamFinished: {
         service.missedCache = Store.parseList(text)
-        if (service.missedVisible) service.loadMissed(service.missedCache)
-        else service.missedLoaded = true
+        service.loadMissed(service.missedCache)
       }
     }
   }
@@ -1153,9 +1152,13 @@ Item {
   function prefetchMissed() { missedPrefetch.restart() }
 
   // The panel is everything: what is on screen now, then what you missed.
-  // The live cards go in the moment the fingers start, so they can travel
-  // across into the panel under the fingers rather than appearing after the
-  // store has answered.
+  //
+  // Its cards are built ahead of time and kept, hidden, in step with the
+  // deck and the store - never built when the fingers arrive. Building forty
+  // cards took a quarter of a second on the thread that draws, which is as
+  // long as the whole swipe: the panel could not follow the fingers because
+  // nothing was drawn until they had already let go. Opening it now only
+  // reveals what exists.
   function panelRow(source, live) {
     var row = Store.normalise(source)
     row.duration = 0                 // nothing in here times out
@@ -1163,34 +1166,61 @@ Item {
     return row
   }
 
-  function startPanel() {
-    missed.clear()
-    for (var i = 0; i < toasts.count; i++) {
-      var live = toasts.get(i)
-      if (leaving[live.key]) continue
-      missed.append(panelRow(live, true))
-    }
-    missedOpenDeck = ""
-    missedScroll = 0
-    // Everything at once, from what was read ahead, so it all comes in with
-    // the panel; the fresh read afterwards only adds what is new since.
-    loadMissed(missedCache)
-    refreshMissed()
+  function panelLiveCount() {
+    var n = 0
+    for (var i = 0; i < missed.count && missed.get(i).live; i++) n += 1
+    return n
   }
 
+  // The live rows at the top, in the deck's order. Normally already true -
+  // arrivals and closes keep it so - and then this moves nothing.
+  function syncLive() {
+    var want = []
+    for (var i = 0; i < toasts.count; i++) {
+      var row = toasts.get(i)
+      if (!leaving[row.key]) want.push(row)
+    }
+    var keep = {}
+    for (var w = 0; w < want.length; w++) {
+      keep[want[w].key] = true
+      var at = missedIndex(want[w].key)
+      if (at < 0) missed.insert(w, panelRow(want[w], true))
+      else if (at !== w) missed.move(at, w, 1)
+    }
+    for (var r = missed.count - 1; r >= want.length; r--)
+      if (missed.get(r).live && !keep[missed.get(r).key]) missed.remove(r)
+    missedCount = missed.count
+    missedRevision += 1
+  }
+
+  function startPanel() {
+    missedOpenDeck = ""
+    missedScroll = 0
+    syncLive()
+    refreshMissed()                  // only adds what is new since the last read
+  }
+
+  // The missed rows below the live ones, in the store's order (newest
+  // first), changed in place: moved, inserted or removed, never rebuilt.
   function loadMissed(entries) {
-    // Anything the panel already shows but the store no longer lists was
-    // dealt with somewhere else in the meantime.
     var listed = {}
     for (var e = 0; e < entries.length; e++) if (entries[e]) listed[entries[e].key] = true
     for (var r = missed.count - 1; r >= 0; r--)
       if (!missed.get(r).live && !listed[missed.get(r).key]) missed.remove(r)
+    var p = panelLiveCount()
     for (var i = 0; i < entries.length; i++) {
       var row = Store.restored(entries[i])
-      if (!row || missedIndex(row.key) >= 0) continue
-      row = panelRow(row, false)
-      wantIcon(row)                  // the source's icon, as a live card gets it
-      missed.append(row)
+      if (!row) continue
+      var at = missedIndex(row.key)
+      if (at >= 0 && missed.get(at).live) continue      // still on screen
+      if (at < 0) {
+        row = panelRow(row, false)
+        wantIcon(row)                // the source's icon, as a live card gets it
+        missed.insert(p, row)
+      } else if (at !== p) {
+        missed.move(at, p, 1)
+      }
+      p += 1
     }
     missedCount = missed.count
     missedLoaded = true
@@ -1198,8 +1228,12 @@ Item {
   }
 
   function joinMissed(row) {
-    if (!missedVisible || missedIndex(row.key) >= 0) return
-    missed.insert(0, panelRow(row, true))
+    var at = missedIndex(row.key)
+    if (at >= 0) {
+      missed.set(at, panelRow(row, true))   // an update to a card already here
+    } else {
+      missed.insert(0, panelRow(row, true))
+    }
     missedCount = missed.count
     missedRevision += 1
   }
@@ -1885,6 +1919,7 @@ Item {
       var snap = service.snapshot(), deckNow = service.deckHeight
       if (at >= 0) {
         Store.applyTo(toasts, at, row)      // an update, in place
+        service.joinMissed(toasts.get(at))
         service.retarget(undefined, undefined, snap, deckNow)
       } else {
         service.pinDeckDisplay()
