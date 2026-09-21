@@ -63,22 +63,41 @@ Item {
   readonly property color bodyColor: Qt.darker(Color.notifications.text, 1.15)
   readonly property color accentColor: critical ? Color.urgent
                                                : (row.urgency === 0 ? dimColor : Color.notifications.countdown)
-  // A hairline, not the theme's full border. Every card on screen wearing a
-  // two-pixel outline in the border colour turned a deck into a stack of
-  // boxes; the outline is what you notice, not the message. The card you are
-  // dealing with - under the pointer, or the front of a shut stack - gets a
-  // little more of it, and an urgent one keeps a real edge.
-  readonly property bool outlined: hovered || (!expanded && place.front)
+  // The card's edge is the window's edge: the colour or gradient, opacity and
+  // width the theme gives Hyprland's active border, so a notification sits
+  // on the desktop the way a window does. The width falls back to
+  // Hyprland's own border_size when the theme does not set one - that is
+  // what the windows are actually drawn with.
+  property int windowBorderWidth: 2
+  readonly property var windowBorderSpec: Border.hyprlandActiveSpec(
+      Color.notifications.border, windowBorderWidth)
+  // A card underneath the front one of a shut stack is only an edge peeking
+  // out; a full-strength border on each of those draws three outlines where
+  // there is one message. Those, and only those, fade.
+  readonly property bool underneath: !expanded && !place.front
   readonly property var noBorder: ({ top: 0, right: 0, bottom: 0, left: 0 })
   readonly property var flat: ({ color: "transparent", widths: noBorder,
                                  gradient: { colors: [], angle: 0, enabled: false } })
-  readonly property var cardBorderSpec: ({
-    color: critical ? Qt.rgba(Color.urgent.r, Color.urgent.g, Color.urgent.b, 0.8)
-                    : Qt.rgba(Color.notifications.border.r, Color.notifications.border.g,
-                              Color.notifications.border.b, outlined ? 0.42 : 0.18),
-    widths: { top: 1, right: 1, bottom: 1, left: 1 },
-    gradient: { colors: [], angle: 0, enabled: false }
-  })
+  function withAlpha(color, amount) {
+    var c = Qt.lighter(color, 1.0)          // parses the theme's #AARRGGBB
+    return Qt.rgba(c.r, c.g, c.b, c.a * amount)
+  }
+  function faded(spec, amount) {
+    var g = spec.gradient || { colors: [], angle: 0, enabled: false }
+    var colors = []
+    for (var i = 0; i < g.colors.length; i++) colors.push(withAlpha(g.colors[i], amount))
+    return { color: withAlpha(spec.color, amount), widths: spec.widths,
+             gradient: { colors: colors, angle: g.angle, enabled: g.enabled } }
+  }
+  readonly property var cardBorderSpec: underneath ? faded(windowBorderSpec, 0.35) : windowBorderSpec
+  // Geometry reads the widths from the unfaded spec, never from the plate:
+  // the plate's spec depends on where the card sits in its stack, that comes
+  // from the layout, and the layout is measured from this card's height - a
+  // loop, even though fading changes only the colour and never a width.
+  readonly property real edgeTop: Border.top(windowBorderSpec)
+  readonly property real edgeRight: Border.right(windowBorderSpec)
+  readonly property real edgeBottom: Border.bottom(windowBorderSpec)
+  readonly property real edgeLeft: Border.left(windowBorderSpec)
   // What a quiet control is filled with instead of outlined.
   readonly property color softFill: Qt.rgba(Color.notifications.text.r, Color.notifications.text.g,
                                             Color.notifications.text.b, 0.09)
@@ -337,7 +356,7 @@ Item {
   readonly property real restingBlock:
       headline.height + (hasBody ? column.spacing + bodyBox.restHeight : 0)
 
-  readonly property real fixedHeight: plate.borderTop + plate.borderBottom
+  readonly property real fixedHeight: card.edgeTop + card.edgeBottom
       + contentPaddingY * 2 + Math.max(thumb.height, textBlock)
 
   // The height this card's *state* implies. The deck lays out from this and
@@ -409,9 +428,9 @@ Item {
       // line slides up by half of whatever was added - so the words move while
       // you are reading them.
       anchors { left: parent.left; right: parent.right; top: parent.top
-                leftMargin: plate.contentLeftInset + Style.space(12)
-                rightMargin: plate.contentRightInset + Style.space(12)
-                topMargin: plate.contentTopInset + card.contentPaddingY }
+                leftMargin: card.edgeLeft + Style.space(12)
+                rightMargin: card.edgeRight + Style.space(12)
+                topMargin: card.edgeTop + card.contentPaddingY }
       spacing: Style.space(12)
 
       // Every notification gets a mark, whether or not the sender sent one:
@@ -942,14 +961,14 @@ Item {
       visible: card.showCountdown && card.row.duration > 0 && card.place.front
                && card.remaining > 0 && !card.expanded
       anchors { left: parent.left; bottom: parent.bottom
-                leftMargin: plate.contentLeftInset + Style.space(7)
-                bottomMargin: plate.contentBottomInset }
+                leftMargin: card.edgeLeft + Style.space(7)
+                bottomMargin: card.edgeBottom }
       height: Style.spacing.hairline
       radius: Style.cornerRadius
       color: card.accentColor
       borderSpec: Border.none()
-      width: visible ? Math.max(0, (body.width - plate.contentLeftInset
-                                    - plate.contentRightInset - Style.space(14))
+      width: visible ? Math.max(0, (body.width - card.edgeLeft
+                                    - card.edgeRight - Style.space(14))
                                    * (card.remaining / Math.max(1, card.row.duration))) : 0
     }
 

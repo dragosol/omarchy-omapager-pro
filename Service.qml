@@ -1437,11 +1437,26 @@ Item {
       }
     }
   }
-  Component.onCompleted: naturalProbe.running = true
+  // And the width windows are drawn with, which is what a card's border
+  // falls back to when the theme does not give one of its own.
+  property int windowBorderWidth: 2
+  Process {
+    id: borderProbe
+    command: ["hyprctl", "-j", "getoption", "general:border_size"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var n = Number(JSON.parse(text).int)
+          if (isFinite(n) && n >= 0) service.windowBorderWidth = n
+        } catch (e) {}
+      }
+    }
+  }
+  Component.onCompleted: { naturalProbe.running = true; borderProbe.running = true }
   Connections {
     target: Hyprland
     function onRawEvent(event) {
-      if (event.name === "configreloaded") naturalProbe.running = true
+      if (event.name === "configreloaded") { naturalProbe.running = true; borderProbe.running = true }
     }
   }
 
@@ -2518,7 +2533,7 @@ Item {
         notificationDisplays: service.displayMode === "all" ? service.displayNames : [service.targetDisplayName],
         swipeKeys: service.swipeKeys.length, swipeX: service.swipeX,
         thrown: Object.keys(service.thrown).length, lastWheel: service.lastWheel,
-        naturalScroll: service.naturalScroll,
+        naturalScroll: service.naturalScroll, windowBorderWidth: service.windowBorderWidth,
         scrollY: service.scrollY, scrollMax: service.scrollMax, deckRoom: service.deckRoom,
         layoutHeight: service.layout.height,
         edgeSwipe: service.edgeSwipe, edgeStatus: service.edgeStatus,
@@ -3036,6 +3051,7 @@ Item {
             hovered: service.hoverKey === model.key
             actions: service.actionsOf(model.key, service.refsRevision)
             fontScale: service.fontScale
+            windowBorderWidth: service.windowBorderWidth
             showCountdown: service.showCountdown
             actionsAlign: service.actionsAlign
             replyError: service.replyingKey === model.key ? service.replyError : ""
@@ -3127,13 +3143,10 @@ Item {
             height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
             radius: Style.cornerRadius
             color: Color.notifications.background
-            // The cards' own hairline, so the heading reads as one of them.
-            borderSpec: ({
-              color: Qt.rgba(Color.notifications.border.r, Color.notifications.border.g,
-                             Color.notifications.border.b, 0.18),
-              widths: { top: 1, right: 1, bottom: 1, left: 1 },
-              gradient: { colors: [], angle: 0, enabled: false }
-            })
+            // The cards' own edge - the window border - so the heading reads
+            // as one of them.
+            borderSpec: Border.hyprlandActiveSpec(Color.notifications.border,
+                                                  service.windowBorderWidth)
 
             Row {
               anchors.left: parent.left
@@ -3258,6 +3271,7 @@ Item {
                     hoverX: service.missedHoverX - missedSlot.x
                     hoverY: service.missedHoverY - missedSlot.y
                     fontScale: service.fontScale
+                    windowBorderWidth: service.windowBorderWidth
                     actionsAlign: service.actionsAlign
                     now: service.nowTick
                     swipe: service.missedSwipeKey === missedSlot.key ? service.missedSwipeX : 0
