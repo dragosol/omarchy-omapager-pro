@@ -116,6 +116,7 @@ function newCapacityScope() {
   const s = {
     toasts, refs: {}, refsRevision: 0, keySeed: 0, liveKeys: Object.create(null),
     maxLiveNotifications: 100, heights: {}, leaving: {}, layoutRevision: 0,
+    thrown: {}, swipeRevision: 0,
     replyingKey: '', held: [], doNotDisturb: false, globalSnoozeUntil: 0,
     recentRows: [], recentLimit: 20,
     senderImageQueue: [], senderImageRevision: 0, helperSettingsReady: false,
