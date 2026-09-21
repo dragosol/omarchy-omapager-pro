@@ -118,7 +118,7 @@ function newCapacityScope() {
     maxLiveNotifications: 100, heights: {}, leaving: {}, layoutRevision: 0,
     thrown: {}, swipeRevision: 0,
     // The Notifications panel is not under test here: nothing is showing.
-    leaveMissed() {}, joinMissed() {},
+    leaveMissed() {}, joinMissed() {}, prefetchMissed() {},
     replyingKey: '', held: [], doNotDisturb: false, globalSnoozeUntil: 0,
     recentRows: [], recentLimit: 20,
     senderImageQueue: [], senderImageRevision: 0, helperSettingsReady: false,

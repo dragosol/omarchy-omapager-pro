@@ -1124,6 +1124,12 @@ Item {
     else if (verb === "end") releaseMissed(Number(parts[1]) || 0, Number(parts[2]) || 0)
   }
 
+  // What you missed is read ahead of time, not when you ask for it. Reading
+  // it on the swipe meant the store answered after the panel had started
+  // moving, and everything but the live cards popped in once it had
+  // arrived. Kept fresh a moment after anything closes or is held back -
+  // the only times the answer can change.
+  property var missedCache: []
   Process {
     id: missedProc
     environment: service.helperEnvironment
@@ -1131,9 +1137,20 @@ Item {
     command: [service.storeBin, "unseen", String(service.missedLimit)]
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: service.loadMissed(Store.parseList(text))
+      onStreamFinished: {
+        service.missedCache = Store.parseList(text)
+        if (service.missedVisible) service.loadMissed(service.missedCache)
+        else service.missedLoaded = true
+      }
     }
   }
+  Timer {
+    id: missedPrefetch
+    // Long enough for the store's queued close to land first.
+    interval: 700
+    onTriggered: service.refreshMissed()
+  }
+  function prefetchMissed() { missedPrefetch.restart() }
 
   // The panel is everything: what is on screen now, then what you missed.
   // The live cards go in the moment the fingers start, so they can travel
@@ -1153,15 +1170,21 @@ Item {
       if (leaving[live.key]) continue
       missed.append(panelRow(live, true))
     }
-    missedCount = missed.count
-    missedLoaded = false
     missedOpenDeck = ""
     missedScroll = 0
-    missedRevision += 1
+    // Everything at once, from what was read ahead, so it all comes in with
+    // the panel; the fresh read afterwards only adds what is new since.
+    loadMissed(missedCache)
     refreshMissed()
   }
 
   function loadMissed(entries) {
+    // Anything the panel already shows but the store no longer lists was
+    // dealt with somewhere else in the meantime.
+    var listed = {}
+    for (var e = 0; e < entries.length; e++) if (entries[e]) listed[entries[e].key] = true
+    for (var r = missed.count - 1; r >= 0; r--)
+      if (!missed.get(r).live && !listed[missed.get(r).key]) missed.remove(r)
     for (var i = 0; i < entries.length; i++) {
       var row = Store.restored(entries[i])
       if (!row || missedIndex(row.key) >= 0) continue
@@ -1328,7 +1351,10 @@ Item {
       stored.push(keys[i])
       missed.remove(at)
     }
-    if (stored.length) Store.write(storeProc, storeBin, "seen", null, stored)
+    if (stored.length) {
+      Store.write(storeProc, storeBin, "seen", null, stored)
+      missedCache = missedCache.filter(function(entry) { return stored.indexOf(entry.key) < 0 })
+    }
     missedCount = missed.count
     missedRevision += 1
     if (!missed.count && missedOpen) closeMissed()
@@ -1768,6 +1794,7 @@ Item {
     if (muted && notification.urgency !== NotificationUrgency.Critical) {
       Store.write(storeProc, storeBin, "put", row)
       Store.write(storeProc, storeBin, "close", null, [key, muted])
+      prefetchMissed()
       release(key)
       if (rowIndexFor(key) < 0) releaseLive(key)
       else liveKeys[key].row = null
@@ -1925,6 +1952,7 @@ Item {
   function finishClose(key, reason) {
     if (replyingKey === key) replyingKey = ""
     leaveMissed(key)
+    prefetchMissed()
     if (thrown[key]) {
       var still = {}
       for (var t in thrown) if (t !== key) still[t] = true
@@ -2538,6 +2566,7 @@ Item {
   onHelperSettingsReadyChanged: if (helperSettingsReady) Qt.callLater(function() {
     sandboxProbe.running = true
     service.startEdge()
+    service.refreshMissed()
     restoreProc.running = true
     quietRestoreProc.running = true
     tidyProc.running = true
@@ -3314,10 +3343,22 @@ Item {
                   readonly property real deckY: deckPlace ? deckPlace.y - service.scrollY : 0
                   readonly property real panelY: missedViewport.y + y - service.missedScroll
                   scale: place.scale + ((deckPlace ? deckPlace.scale : place.scale) - place.scale) * away
-                  opacity: live ? place.opacity + ((deckPlace ? deckPlace.opacity : 0) - place.opacity) * away
-                                : place.opacity * missedPanel.fadeIn
+                  opacity: (live ? place.opacity + ((deckPlace ? deckPlace.opacity : 0) - place.opacity) * away
+                                 : place.opacity * missedPanel.fadeIn) * enter
+                  // A row that turns up after the panel is already in slides
+                  // in from the edge the panel came from, rather than
+                  // appearing in place.
+                  property real enter: 1
+                  NumberAnimation on enter {
+                    id: enterRun
+                    running: false
+                    from: 0; to: 1
+                    duration: 280
+                    easing.type: Easing.OutCubic
+                  }
+                  Component.onCompleted: if (service.missedShown >= 0.999) enterRun.start()
                   transform: Translate {
-                    x: -missedSlot.away * missedPanel.away
+                    x: -missedSlot.away * missedPanel.away + (1 - missedSlot.enter) * missedPanel.away
                     y: missedSlot.away * (missedSlot.deckY - missedSlot.panelY)
                   }
 
