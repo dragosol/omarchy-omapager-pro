@@ -21,6 +21,7 @@ import "Store.js" as Store
 import "Security.js" as Security
 import "Layout.js" as Layout
 import "Markup.js" as Markup
+import "Gesture.js" as Gesture
 
 Item {
   id: service
@@ -814,6 +815,9 @@ Item {
     interval: 120
     onTriggered: {
       service.commit(function() { service.expanded = false; service.openDeck = "" })
+      // Back to the top: the newest notification is the one a shut deck
+      // shows, so a deck left scrolled would reopen somewhere in the middle.
+      if (service.scrollY > 0) scrollHome.restart()
       service.releaseHeld()
     }
   }
@@ -863,6 +867,232 @@ Item {
     })
   }
   function pointerLeft() { collapseGrace.restart() }
+
+  // ------------------------------------------------------------ gestures
+  //
+  // Two fingers across a card carry it towards the screen edge; let go past a
+  // third of the way, or flick, and it is thrown. The card wearing a group's
+  // count carries the whole group - the number is the handle, and a card
+  // without one only ever takes itself. Two fingers up and down scroll a deck
+  // taller than the screen, which is the only way to reach the bottom of one.
+  //
+  // What arrives is a stream of scroll deltas; Gesture.js decides what they
+  // mean. The cards move on `swipeX` directly rather than on the scene clock:
+  // this is the pointer's motion, one to one, and the clock is for things the
+  // layout decides.
+  property var gesture: null          // Gesture state while fingers are down
+  property var swipeKeys: []          // the cards the fingers are carrying
+  property real swipeX: 0             // how far, as drawn
+  property int swipeRevision: 0       // swipeKeys and thrown are plain maps
+  property var thrown: ({})           // key -> true: flung off, now leaving
+  property var lastWheel: ({})        // the last event, for probe
+
+  // Where a card is drawn sideways. A thrown card stays thrown until its row
+  // is gone: snapping it back to the deck to fade out there would replay the
+  // swipe in reverse.
+  function swipeOffsetFor(key, revision) {
+    if (thrown[key]) return notificationWidth + Style.space(24)
+    return swipeKeys.indexOf(key) >= 0 ? swipeX : 0
+  }
+
+  // What a swipe starting on this card carries: the group, when this is the
+  // card that wears its count; otherwise just the card.
+  function swipeTargets(key) {
+    var pl = placements[key]
+    if (!pl || pl.hidden || leaving[key]) return []
+    if ((pl.count || 1) < 2) return [key]
+    var group = "", i, row
+    for (i = 0; i < toasts.count; i++) {
+      row = toasts.get(i)
+      if (row.key === key) { group = Layout.groupKeyFor(row); break }
+    }
+    var out = []
+    for (i = 0; i < toasts.count; i++) {
+      row = toasts.get(i)
+      if (leaving[row.key]) continue
+      var at = layout.placements[row.key]
+      if (!at || at.deck !== pl.deck) continue
+      if (Layout.groupKeyFor(row) === group) out.push(row.key)
+    }
+    return out.length ? out : [key]
+  }
+
+  // How many live cards share this row's group, for the menu's wording.
+  function groupSizeOf(key, revision) {
+    var group = "", i, row, n = 0
+    for (i = 0; i < toasts.count; i++) {
+      row = toasts.get(i)
+      if (row.key === key) { group = Layout.groupKeyFor(row); break }
+    }
+    for (i = 0; i < toasts.count; i++) {
+      row = toasts.get(i)
+      if (!leaving[row.key] && Layout.groupKeyFor(row) === group) n += 1
+    }
+    return n
+  }
+
+  function dismissGroup(key) {
+    var group = "", i, row, keys = []
+    for (i = 0; i < toasts.count; i++) {
+      row = toasts.get(i)
+      if (row.key === key) { group = Layout.groupKeyFor(row); break }
+    }
+    for (i = 0; i < toasts.count; i++) {
+      row = toasts.get(i)
+      if (Layout.groupKeyFor(row) === group) keys.push(row.key)
+    }
+    for (i = 0; i < keys.length; i++) closeToast(keys[i], "dismissed")
+  }
+
+  readonly property bool swipeBusy: throwRun.running || springRun.running
+
+  NumberAnimation {
+    id: throwRun
+    target: service; property: "swipeX"
+    easing.type: Easing.OutCubic
+    onFinished: service.landThrow()
+  }
+
+  NumberAnimation {
+    id: springRun
+    target: service; property: "swipeX"; to: 0
+    duration: 260
+    easing.type: Easing.OutBack
+    easing.overshoot: 1.1
+    onFinished: { service.swipeKeys = []; service.swipeRevision += 1 }
+  }
+
+  Timer {
+    id: fingersUp
+    interval: Gesture.IDLE
+    onTriggered: service.endGesture()
+  }
+
+  function throwCarried(state) {
+    throwRun.from = swipeX
+    throwRun.to = notificationWidth + Style.space(24)
+    throwRun.duration = Gesture.throwDuration(state, notificationWidth)
+    throwRun.restart()
+  }
+
+  function landThrow() {
+    var keys = swipeKeys
+    var next = {}
+    for (var k in thrown) next[k] = true
+    for (var i = 0; i < keys.length; i++) next[keys[i]] = true
+    thrown = next
+    swipeKeys = []
+    swipeX = 0
+    swipeRevision += 1
+    for (var j = 0; j < keys.length; j++) closeToast(keys[j], "dismissed")
+  }
+
+  function endGesture() {
+    fingersUp.stop()
+    var g = gesture
+    gesture = null
+    if (!g || g.axis !== "x" || !swipeKeys.length) {
+      if (swipeKeys.length && !swipeBusy) { swipeKeys = []; swipeX = 0; swipeRevision += 1 }
+      return
+    }
+    if (Gesture.throws(g, notificationWidth)) throwCarried(g)
+    else springRun.restart()
+  }
+
+  // One wheel event from the deck. Returns whether it was used. `under` is
+  // the card the pointer is on, in the deck's own coordinates.
+  function wheel(ev, under) {
+    var px = ev.pixelDelta, ang = ev.angleDelta
+    var phase = ev.phase === undefined ? -1 : ev.phase
+    lastWheel = { px: px.x, py: px.y, ax: ang.x, ay: ang.y, phase: phase,
+                  inverted: !!ev.inverted, under: under || "" }
+
+    // Fingers up. Carries no travel of its own.
+    if (phase === Qt.ScrollEnd) { endGesture(); return true }
+
+    // A mouse wheel: clicks of rotation, no fingers. It can scroll a deck
+    // that does not fit; it never carries a card, because a tilt-wheel
+    // nudge throwing a notification away would be an accident every time.
+    if (px.x === 0 && px.y === 0) {
+      if (phase === Qt.ScrollBegin) return true
+      return scrollBy(ang.y / 120 * Style.space(56))
+    }
+
+    if (swipeBusy || replyingKey !== "") return true
+    if (!gesture) gesture = Gesture.start(Date.now())
+    fingersUp.restart()
+
+    // Carrying follows the fingers, whichever way scrolling is set to go -
+    // the card is an object being pushed, not a page being scrolled. Qt
+    // reports deltas in scroll terms, which natural scrolling has already
+    // flipped once. `inverted` is meant to say whether it did, but on
+    // Hyprland it is always false, natural or not - so ask Hyprland instead.
+    var sign = (ev.inverted || naturalScroll) ? 1 : -1
+    var before = gesture.axis
+    gesture = Gesture.feed(gesture, px.x * sign, px.y * sign, Date.now())
+
+    if (gesture.axis === "x") {
+      if (before !== "x") {
+        swipeKeys = swipeTargets(under || hoverKey)
+        swipeRevision += 1
+      }
+      swipeX = swipeKeys.length ? Gesture.drawn(gesture.x) : 0
+      return true
+    }
+    // Scrolling moves the deck the way every other scroll view on the desktop
+    // moves, so it takes the delta as Qt reports it.
+    if (gesture.axis === "y") return scrollBy(px.y) || true
+    return true
+  }
+
+  // Whether the touchpad scrolls naturally, from Hyprland itself: Qt's own
+  // `inverted` flag never arrives over this compositor. Read at startup and
+  // again whenever the config reloads, since that is where it is set.
+  property bool naturalScroll: false
+  Process {
+    id: naturalProbe
+    command: ["hyprctl", "-j", "getoption", "input:touchpad:natural_scroll"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var o = JSON.parse(text)
+          service.naturalScroll = o.bool === true || Number(o.int) === 1
+        } catch (e) {}
+      }
+    }
+  }
+  Component.onCompleted: naturalProbe.running = true
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      if (event.name === "configreloaded") naturalProbe.running = true
+    }
+  }
+
+  // ------------------------------------------------------------- scrolling
+  //
+  // An open deck of long messages is taller than the screen, and before this
+  // the bottom of it - and every deck below - was simply unreachable.
+  property real deckRoom: 100000      // what the showing output can fit
+  property real scrollY: 0
+  readonly property real scrollMax: Math.max(0, layout.height - deckRoom)
+  onScrollMaxChanged: if (scrollY > scrollMax) scrollY = scrollMax
+  signal scrolled()
+
+  function scrollBy(dy) {
+    if (scrollMax <= 0) return false
+    scrollHome.stop()
+    scrollY = Math.max(0, Math.min(scrollMax, scrollY - dy))
+    scrolled()
+    return true
+  }
+
+  NumberAnimation {
+    id: scrollHome
+    target: service; property: "scrollY"; to: 0
+    duration: service.sceneDuration
+    easing.type: Easing.OutCubic
+  }
 
   // A card's target height: what its state implies, never what it currently
   // measures. This moves on a state change - a hover, a reply opening - and
@@ -930,7 +1160,8 @@ Item {
     var snap = {}
     for (var key in placements)
       snap[key] = { y: at(key, "y"), scale: at(key, "scale"),
-                    opacity: at(key, "opacity"), height: at(key, "height") }
+                    opacity: at(key, "opacity"), height: at(key, "height"),
+                    size: placements[key].size }
     return snap
   }
 
@@ -972,7 +1203,11 @@ Item {
     // a frame and read as a flash.
     return { y: prev ? prev.y : 0, scale: prev ? prev.scale : 1, opacity: 0,
              height: prev ? prev.height : 0, z: 2000, front: true,
-             hidden: false, count: 1 }
+             hidden: false, count: 1,
+             // The deck it was in, as far as the card's own sizing goes: a
+             // card that changed its line count on the way out would move
+             // the layout it is supposed to be leaving quietly.
+             size: prev ? prev.size : 1 }
   }
 
   // A row on its way out keeps its place in the model until the move that
@@ -1250,6 +1485,12 @@ Item {
 
   function finishClose(key, reason) {
     if (replyingKey === key) replyingKey = ""
+    if (thrown[key]) {
+      var still = {}
+      for (var t in thrown) if (t !== key) still[t] = true
+      thrown = still
+      swipeRevision += 1
+    }
     var rest = {}
     for (var k in leaving) if (k !== key) rest[k] = leaving[k]
     leaving = rest
@@ -1895,9 +2136,37 @@ Item {
         displayMode: service.displayMode, displayName: service.displayName,
         displays: service.displayNames, focusedDisplay: service.focusedDisplayName,
         targetDisplay: service.targetDisplayName,
-        notificationDisplays: service.displayMode === "all" ? service.displayNames : [service.targetDisplayName]})
+        notificationDisplays: service.displayMode === "all" ? service.displayNames : [service.targetDisplayName],
+        swipeKeys: service.swipeKeys.length, swipeX: service.swipeX,
+        thrown: Object.keys(service.thrown).length, lastWheel: service.lastWheel,
+        naturalScroll: service.naturalScroll,
+        scrollY: service.scrollY, scrollMax: service.scrollMax, deckRoom: service.deckRoom,
+        layoutHeight: service.layout.height})
     }
     function clear(): string { service.clearAll("cleared"); return "ok" }
+
+    // A finished two-finger swipe of `px`, released at rest, starting on the
+    // card under the pointer or else the front card. Same decision the
+    // touchpad path makes; only the fingers are missing.
+    function swipe(px: string): string {
+      var key = service.hoverKey
+      if (!key && toasts.count > 0) key = toasts.get(0).key
+      if (!key || service.swipeBusy) return "none"
+      var dx = Number(px) || 0
+      var g = Gesture.feed(Gesture.start(0), dx + (dx >= 0 ? Gesture.LOCK : -Gesture.LOCK), 0, 1000)
+      service.swipeKeys = service.swipeTargets(key)
+      service.swipeRevision += 1
+      service.swipeX = Gesture.drawn(g.x)
+      service.gesture = g
+      var carried = service.swipeKeys.length
+      var throws = Gesture.throws(g, service.notificationWidth)
+      service.endGesture()
+      return (throws ? "thrown " : "sprung ") + carried
+    }
+    function scroll(px: string): string {
+      service.scrollBy(-(Number(px) || 0))
+      return String(Math.round(service.scrollY)) + "/" + String(Math.round(service.scrollMax))
+    }
     function dnd(): string {
       service.doNotDisturb = !service.doNotDisturb
       return service.doNotDisturb ? "on" : "off"
@@ -2197,8 +2466,20 @@ Item {
         x: clipper.motionInset
         width: service.notificationWidth
         // From the same clock as everything on it, so the clip and its
-        // contents can never disagree mid-move.
-        height: service.deckHeight
+        // contents can never disagree mid-move - and never taller than the
+        // screen. Past that the cards scroll inside it.
+        height: Math.min(service.deckHeight, service.deckRoom)
+
+        // What this output can show below the bar, for the scroll limit.
+        // Only the surface actually showing the deck gets a say.
+        Binding {
+          target: service
+          property: "deckRoom"
+          when: surface.showingNotifications && surface.height > 0
+          value: surface.height - service.barClearance - clipper.motionInset
+                 - service.edgeSpacing
+                 - (service.barPosition === "bottom" ? service.barThickness : 0)
+        }
 
         // One hover region for the whole deck. Individual cards must not own
         // this: moving between two of them would leave and re-enter, and the
@@ -2234,6 +2515,9 @@ Item {
             // accepts it, and so a button's own containsMouse never becomes
             // true. Clicks are fine - this accepts no buttons and they fall
             // through - which is why the buttons worked while looking dead.
+            // The cards scroll; this region does not. Everything below is in
+            // the cards' coordinates.
+            y += service.scrollY
             service.hoverX = x
             service.hoverY = y
             var places = service.placements
@@ -2271,6 +2555,19 @@ Item {
               service.pointerLeft()
             }
           }
+          // Two fingers: carry a card, or scroll the deck. Everything that
+          // decides which is in the service; this only says where it happened.
+          onWheel: function(wheel) {
+            hoverAt(wheel.x, wheel.y)
+            wheel.accepted = service.wheel(wheel, service.hoverKey)
+          }
+          Connections {
+            target: service
+            function onScrolled() {
+              if (hoverArea.containsMouse) hoverArea.hoverAt(hoverArea.mouseX, hoverArea.mouseY)
+            }
+          }
+
           onPositionChanged: function(mouse) {
             hoverAt(mouse.x, mouse.y)
 
@@ -2283,13 +2580,34 @@ Item {
               if (!place) continue
               var top = place.y
               var bottom = top + (service.heights[first.key] || Style.space(58))
-              if (mouse.y >= top - Style.space(6) && mouse.y <= bottom + Style.space(6)) {
+              var my = mouse.y + service.scrollY
+              if (my >= top - Style.space(6) && my <= bottom + Style.space(6)) {
                 service.pointerEntered(decks[i].key)
                 return
               }
             }
           }
         }
+
+        // Where it is in a deck too tall for the screen. Outside the deck's
+        // input mask, in the gap to the screen edge, so it never covers a card.
+        Rectangle {
+          visible: service.scrollMax > 0
+          x: deck.width + Math.max(2, Math.round((clipper.edgeGap - width) / 2))
+          width: Style.space(3)
+          radius: width / 2
+          height: Math.max(Style.space(24), deck.height * deck.height / Math.max(1, service.layout.height))
+          y: service.scrollMax > 0 ? (deck.height - height) * service.scrollY / service.scrollMax : 0
+          color: Color.notifications.text
+          opacity: service.pointerIn ? 0.45 : 0.2
+          Behavior on opacity { NumberAnimation { duration: 150 } }
+        }
+
+        Item {
+          id: scroller
+          width: deck.width
+          height: service.deckHeight
+          y: -service.scrollY
 
         Repeater {
           model: toasts
@@ -2351,7 +2669,13 @@ Item {
                                    String(model.source || model.app || ""), seconds)
             }
             onSilenceRequested: service.doNotDisturb = true
+
+            swipe: service.swipeOffsetFor(model.key, service.swipeRevision)
+            groupSize: service.groupSizeOf(model.key, service.layoutRevision)
+            onDismissGroupRequested: service.dismissGroup(model.key)
+            onDismissAllRequested: service.clearAll("dismissed")
           }
+        }
         }
       }
       }

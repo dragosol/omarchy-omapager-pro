@@ -46,7 +46,8 @@ function groupRows(rows) {
 
 // Rows are newest-first. Returns:
 //   decks:      [{ key, rows: [row...] }] in display order, newest deck first
-//   placements: { rowKey: { y, height, scale, opacity, z, front, hidden, count } }
+//   placements: { rowKey: { y, height, scale, opacity, z, front, hidden, count,
+//                           deck, size } }
 //   height:     total height the deck area occupies
 function compute(rows, opts) {
   var stacking = opts.stacking || "all"
@@ -79,9 +80,13 @@ function compute(rows, opts) {
   for (var d = 0; d < order.length; d++) {
     var deck = byKey[order[d]]
     // In "source" mode the deck already separates senders, so grouping inside
-    // it would be grouping twice.
+    // it would be grouping twice - but the front card still wears the deck's
+    // count. A shut deck draws at most three edges, so without the number a
+    // stack of ten reads exactly like a stack of three.
     deck.items = stacking === "source"
-      ? deck.rows.map(function(r) { return { key: r.key, row: r, count: 1 } })
+      ? deck.rows.map(function(r, i) {
+          return { key: r.key, row: r, count: i === 0 ? deck.rows.length : 1 }
+        })
       : groupRows(deck.rows)
     decks.push(deck)
   }
@@ -102,7 +107,8 @@ function compute(rows, opts) {
       if (open) {
         placements[item.key] = {
           y: y, scale: 1, opacity: 1, z: 1000 - shown, front: r === 0,
-          hidden: false, height: heightOf(item.key), count: item.count
+          hidden: false, height: heightOf(item.key), count: item.count,
+          deck: decks[k].key, size: items.length
         }
         y += heightOf(item.key) + gap
         shown += 1
@@ -116,7 +122,8 @@ function compute(rows, opts) {
           z: 1000 - r,
           front: r === 0,
           hidden: !drawn,
-          count: item.count
+          count: item.count,
+          deck: decks[k].key, size: items.length
         }
       }
     }

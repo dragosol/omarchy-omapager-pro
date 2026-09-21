@@ -21,11 +21,11 @@ import qs.Ui
 
 BarWidget {
   id: pager
-  moduleName: "njpatel.omapager"
+  moduleName: "io.github.dragosol.omapager-pro"
 
   // The daemon, if it is up. Everything that reads it degrades to empty rather
   // than breaking the bar.
-  readonly property var service: bar && bar.shell ? bar.shell.serviceFor("njpatel.omapager") : null
+  readonly property var service: bar && bar.shell ? bar.shell.serviceFor("io.github.dragosol.omapager-pro") : null
   readonly property bool silenced: service ? service.doNotDisturb : false
   readonly property bool sharingActive: service ? service.sharingActive : false
   readonly property bool sharingOfferPending: service ? service.sharingOfferPending : false

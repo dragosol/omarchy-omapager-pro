@@ -79,8 +79,22 @@ Item {
   // opens when the deck is open, and on hover when there is nothing else on
   // screen to open. A card in a collapsed stack never does: every card there
   // is drawn at the front one's height, so a tall one would hang out of it.
-  readonly property bool bodyOpen: expanded || (hovered && sole)
-  readonly property int bodyLines: bodyOpen ? 8 : 2
+  //
+  // Except in a crowded deck. Eight lines on every card of an open deck of
+  // ten is a wall of text taller than the screen, and the message you want is
+  // somewhere in it. There each card opens to three, and the one you rest the
+  // pointer on opens the rest of the way. Resting, not passing: a card that
+  // grows the instant the pointer crosses it pushes the one below out from
+  // under a pointer on its way there.
+  readonly property bool crowded: expanded && (place.size || 1) > 3
+  property bool dwelt: false
+  Timer {
+    interval: 450
+    running: card.hovered && card.crowded && !card.dwelt
+    onTriggered: card.dwelt = true
+  }
+  readonly property bool bodyOpen: (expanded && (!crowded || dwelt)) || (hovered && sole)
+  readonly property int bodyLines: bodyOpen ? 8 : (crowded ? 3 : 2)
   readonly property int stands: place.count || 1     // how many this card speaks for
 
   // Everything this card can do, in one row: what it found in its own text
@@ -201,8 +215,27 @@ Item {
       out.push({ kind: "snooze", label: String(snoozeOptions[i].menuLabel),
                  value: Number(snoozeOptions[i].seconds) })
     out.push({ kind: "silence", label: "Enable Do Not Disturb", value: 0 })
+    // The mouse's way to do what a group swipe does. The count is written
+    // out: "Dismiss all" on a card that is one of three is a guess about
+    // which "all".
+    if (groupSize > 1)
+      out.push({ kind: "dismissGroup", value: 0,
+                 label: "Dismiss all " + groupSize + " from "
+                        + String(row.source || row.app || "this source") })
+    out.push({ kind: "dismissAll", label: "Dismiss everything", value: 0 })
     return out
   }
+
+  // How many live cards share this one's source. Only the menu reads it.
+  property int groupSize: 1
+  signal dismissGroupRequested()
+  signal dismissAllRequested()
+
+  // Sideways, as carried by two fingers on the touchpad. The service owns the
+  // number; the card only draws it, and fades as it goes so a thrown card
+  // is gone by the time it reaches the edge rather than cut off there.
+  property real swipe: 0
+  readonly property real swipeFade: Math.max(0, 1 - Math.abs(swipe) / Math.max(1, width))
 
   // The pointer, in the deck's coordinates, handed down from the one region
   // that is allowed to see it. Cards convert it to their own space so the
@@ -217,6 +250,8 @@ Item {
     if (kind === "more") { deedsOpen = !deedsOpen; return }
     if (kind === "snooze") { menuOpen = false; snoozeRequested(Number(deed.value)); return }
     if (kind === "silence") { menuOpen = false; silenceRequested(); return }
+    if (kind === "dismissGroup") { menuOpen = false; dismissGroupRequested(); return }
+    if (kind === "dismissAll") { menuOpen = false; dismissAllRequested(); return }
     if (kind === "reply") { menuOpen = false; replyRequested(); return }
     if (kind === "action") { actionInvoked(String(deed.value)); return }
     offerTaken(kind, String(deed.value))
@@ -297,7 +332,7 @@ Item {
   // And the height the scene says it is right now, on the way there.
   property real drawnHeight: targetHeight
 
-  onHoveredChanged: if (!hovered) menuOpen = false
+  onHoveredChanged: if (!hovered) { menuOpen = false; dwelt = false }
   onExpandedChanged: if (!expanded) menuOpen = false
 
   // Position, size and opacity all come from the scene. The card owns none of
@@ -310,7 +345,8 @@ Item {
   y: scene ? scene.at(row.key, "y") : 0
   z: place.z
   scale: scene ? scene.at(row.key, "scale") : 1
-  opacity: place.hidden ? 0 : (scene ? scene.at(row.key, "opacity") : 1)
+  x: swipe
+  opacity: place.hidden ? 0 : (scene ? scene.at(row.key, "opacity") : 1) * swipeFade
   transformOrigin: Item.Top
 
   // `visible` is deliberately not bound to anything. It used to be
