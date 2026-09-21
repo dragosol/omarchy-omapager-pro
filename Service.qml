@@ -1146,6 +1146,9 @@ Item {
     }
     missedCount = missed.count
     missedLoaded = true
+    missedOpenDeck = ""
+    missedScroll = 0
+    missedRevision += 1
   }
 
   function refreshMissed() {
@@ -1224,9 +1227,48 @@ Item {
   property bool missedWasEntered: false
   onMissedPointerInChanged: {
     if (missedPointerIn) { missedWasEntered = true; missedAway.stop() }
-    else if (missedOpen) missedAway.restart()
+    else {
+      missedCollapse.restart()
+      if (missedOpen) missedAway.restart()
+    }
   }
   onMissedOpenChanged: if (!missedOpen) { missedWasEntered = false; missedPointerIn = false }
+
+  // The list is stacked the way the live deck is: one stack per source,
+  // wearing its count, opened by resting the pointer on its front card. A
+  // long afternoon of one chatty channel is one card until you ask for it.
+  property string missedOpenDeck: ""
+  property var missedHeights: ({})
+  property int missedRevision: 0
+  onMissedOpenDeckChanged: missedRevision += 1
+  readonly property var missedLayout: {
+    missedRevision
+    var rows = []
+    for (var i = 0; i < missed.count; i++) rows.push(missed.get(i))
+    return Layout.compute(rows, {
+      stacking: "source",
+      expanded: missedOpenDeck !== "",
+      openDeck: missedOpenDeck,
+      gap: gap,
+      deckGap: Style.space(11),
+      heightOf: function(key) { return service.missedHeights[key] || Style.space(58) }
+    })
+  }
+  function noteMissedHeight(key, h) {
+    if (Math.abs((missedHeights[key] || 0) - h) < 0.5) return
+    missedHeights[key] = h
+    missedRevision += 1
+  }
+  function openMissedDeck(deckKey) {
+    missedCollapse.stop()
+    if (missedOpenDeck !== deckKey) missedOpenDeck = deckKey
+  }
+  // Crossing the gap between two stacks should not slam one shut first.
+  Timer {
+    id: missedCollapse
+    interval: 150
+    onTriggered: service.missedOpenDeck = ""
+  }
 
   function missedIndex(key) {
     for (var i = 0; i < missed.count; i++) if (missed.get(i).key === key) return i
@@ -1242,6 +1284,7 @@ Item {
       if (at >= 0) missed.remove(at)
     }
     missedCount = missed.count
+    missedRevision += 1
     if (!missed.count && missedOpen) closeMissed()
   }
 
@@ -1322,6 +1365,7 @@ Item {
   function scrollMissed(dy) {
     missedScroll = Math.max(0, Math.min(missedScrollMax, missedScroll - dy))
   }
+  onMissedScrollMaxChanged: if (missedScroll > missedScrollMax) missedScroll = missedScrollMax
 
   function endMissedGesture() {
     missedFingersUp.stop()
@@ -1365,7 +1409,8 @@ Item {
   // The same rule as the deck: the card wearing its group's count carries
   // the group.
   function dismissMissedGroupOrOne(key) {
-    if (missedGroupSize(key, 0) > 1 && missedIndex(key) === missedFrontOf(key)) dismissMissedGroup(key)
+    var place = missedLayout.placements[key]
+    if (place && (place.count || 1) > 1) dismissMissedGroup(key)
     else dismissMissed(key)
   }
   function missedFrontOf(key) {
@@ -2478,7 +2523,15 @@ Item {
         layoutHeight: service.layout.height,
         edgeSwipe: service.edgeSwipe, edgeStatus: service.edgeStatus,
         missedShown: service.missedShown, missedOpen: service.missedOpen,
-        missedCount: service.missedCount, missedLoaded: service.missedLoaded})
+        missedCount: service.missedCount, missedLoaded: service.missedLoaded,
+        missedScroll: service.missedScroll, missedScrollMax: service.missedScrollMax,
+        missedListHeight: service.missedLayout.height, missedOpenDeck: service.missedOpenDeck,
+        missedPointerIn: service.missedPointerIn, missedHoverKey: service.missedHoverKey,
+        missedHoverY: service.missedHoverY,
+        missedDecks: service.missedLayout.decks.map(function(d) {
+          var pl = service.missedLayout.placements[d.rows[0].key]
+          return [d.key, Math.round(pl ? pl.y : -1), d.rows.length]
+        })})
     }
     function clear(): string { service.clearAll("cleared"); return "ok" }
 
@@ -2818,6 +2871,7 @@ Item {
         // Out of the way while the missed panel is in: the two occupy the
         // same strip of screen, and the panel is what the fingers asked for.
         opacity: 1 - service.missedShown
+        enabled: !service.missedVisible
 
         Item {
           id: deck
@@ -3058,40 +3112,57 @@ Item {
           id: missedBody
           x: clipper.motionInset
           width: service.notificationWidth
-          height: Math.min(parent.height, missedViewport.y + missedColumn.height
-                                          + (missedEmpty.visible ? missedEmpty.height : 0))
+          // Down to the bottom of the screen whenever there is more than fits;
+          // only as tall as its cards when there is not, so the empty strip
+          // below a short list stays click-through.
+          height: Math.min(parent.height, missedViewport.y
+                           + Math.max(service.missedLayout.height, missedEmpty.visible ? missedEmpty.height : 0))
 
-          // The heading: what this is, how much of it there is, and the two
-          // ways out that do not need a gesture.
+          // The heading. A title the size of the cards' own, and room around
+          // it: a thin strip above a column of full cards read as a label that
+          // had lost its panel.
           BorderSurface {
             id: missedHeader
             width: parent.width
-            height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(12)
+            height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
             radius: Style.cornerRadius
             color: Color.notifications.background
             borderSpec: Border.surfaceSpec("notifications", "border", Color.notifications.border,
                                            Math.max(1, Style.space(2)))
 
-            Text {
-              id: missedTitle
+            Row {
               anchors.left: parent.left
-              anchors.leftMargin: Style.space(14)
+              anchors.leftMargin: Style.space(16)
               anchors.verticalCenter: parent.verticalCenter
-              text: !service.missedLoaded ? "Missed"
-                    : service.missedCount === 0 ? "Nothing missed"
-                    : "Missed · " + service.missedCount
-              textFormat: Text.PlainText
-              color: Color.notifications.text
-              font.family: "Liberation Sans"
-              font.pixelSize: Style.font.title * service.fontScale
-              font.bold: true
+              spacing: Style.space(10)
+
+              Text {
+                id: missedTitle
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Notifications"
+                textFormat: Text.PlainText
+                color: Color.notifications.text
+                font.family: "Liberation Sans"
+                font.pixelSize: Style.font.title * 1.3 * service.fontScale
+                font.bold: true
+              }
+
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: service.missedLoaded && service.missedCount > 0
+                text: String(service.missedCount)
+                textFormat: Text.PlainText
+                color: Qt.darker(Color.notifications.text, 1.4)
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body * service.fontScale
+              }
             }
 
             Row {
               anchors.right: parent.right
-              anchors.rightMargin: Style.space(8)
+              anchors.rightMargin: Style.space(12)
               anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(6)
+              spacing: Style.space(8)
 
               Button {
                 id: missedClear
@@ -3100,9 +3171,9 @@ Item {
                 bordered: true
                 foreground: Color.notifications.text
                 fontFamily: Style.font.family
-                fontSize: Style.font.caption * service.fontScale
-                horizontalPadding: Style.space(8)
-                verticalPadding: Style.space(2)
+                fontSize: Style.font.bodySmall * service.fontScale
+                horizontalPadding: Style.space(12)
+                verticalPadding: Style.space(5)
                 onClicked: service.clearMissed()
               }
               Button {
@@ -3111,9 +3182,9 @@ Item {
                 implicitWidth: implicitHeight
                 foreground: Color.notifications.text
                 fontFamily: Style.font.family
-                fontSize: Style.font.caption * service.fontScale
-                horizontalPadding: Style.space(4)
-                verticalPadding: Style.space(2)
+                fontSize: Style.font.bodySmall * service.fontScale
+                horizontalPadding: Style.space(6)
+                verticalPadding: Style.space(5)
                 onClicked: service.closeMissed()
               }
             }
@@ -3130,17 +3201,14 @@ Item {
               target: service
               property: "missedScrollMax"
               when: surface.showingNotifications
-              value: Math.max(0, missedColumn.height - missedViewport.height)
+              value: Math.max(0, service.missedLayout.height - missedViewport.height)
             }
 
-            Column {
-              id: missedColumn
+            Item {
+              id: missedList
               width: parent.width
+              height: service.missedLayout.height
               y: -service.missedScroll
-              spacing: service.gap
-              move: Transition {
-                NumberAnimation { properties: "y"; duration: 200; easing.type: Easing.OutCubic }
-              }
 
               Repeater {
                 model: missed
@@ -3149,20 +3217,39 @@ Item {
                   id: missedSlot
                   required property var model
                   readonly property string key: String(model.key)
-                  width: missedColumn.width
+                  readonly property var place: service.missedLayout.placements[key]
+                      || ({ y: 0, scale: 1, opacity: 0, z: 0, front: false, hidden: true,
+                            height: 0, count: 1, size: 1 })
+                  width: missedList.width
                   height: missedCard.height
+                  y: place.y
+                  z: place.z
+                  scale: place.scale
+                  opacity: place.opacity
+                  transformOrigin: Item.Top
+                  enabled: !place.hidden
+                  // Plain Behaviors are enough here: nothing in this list
+                  // feeds a moving height back into its own layout.
+                  Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                  Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                  Behavior on opacity { NumberAnimation { duration: 180 } }
 
                   Toast {
                     id: missedCard
                     row: missedSlot.model
                     scene: null
                     cardWidth: missedSlot.width
-                    // Every card here is read, not scanned: open, at three
-                    // lines, opening the rest of the way under a resting
-                    // pointer - the deck's crowded rule, for the same reason.
-                    place: ({ y: 0, scale: 1, opacity: 1, z: 1, front: true,
-                              hidden: false, count: 1, size: 99 })
-                    expanded: true
+                    place: missedSlot.place
+                    expanded: service.missedOpenDeck !== ""
+                              && service.missedOpenDeck === Layout.deckKeyFor(missedSlot.model, "source")
+                    // Shut, every card in a stack is drawn at the front one's
+                    // height, as in the deck; open, at its own. From the
+                    // layout only, never from the card's own measurement -
+                    // the card reads its drawn height back, and that closes
+                    // a loop.
+                    drawnHeight: Math.max(1, missedSlot.place.height || Style.space(58))
+                    onTargetHeightChanged: service.noteMissedHeight(missedSlot.key, targetHeight)
+                    Component.onCompleted: service.noteMissedHeight(missedSlot.key, targetHeight)
                     hovered: service.missedHoverKey === missedSlot.key
                     hoverX: service.missedHoverX - missedSlot.x
                     hoverY: service.missedHoverY - missedSlot.y
@@ -3189,19 +3276,34 @@ Item {
             }
           }
 
+          // Where it is in a list taller than the screen, in the gap to the
+          // screen edge like the deck's.
+          Rectangle {
+            visible: service.missedScrollMax > 0
+            x: parent.width + Math.max(2, Math.round((clipper.edgeGap - width) / 2))
+            y: missedViewport.y + (missedViewport.height - height)
+               * service.missedScroll / Math.max(1, service.missedScrollMax)
+            width: Style.space(3)
+            radius: width / 2
+            height: Math.max(Style.space(24), missedViewport.height * missedViewport.height
+                                              / Math.max(1, service.missedLayout.height))
+            color: Color.notifications.text
+            opacity: service.missedPointerIn ? 0.45 : 0.2
+          }
+
           Text {
             id: missedEmpty
             visible: service.missedLoaded && service.missedCount === 0
-            y: missedViewport.y
+            y: missedViewport.y + Style.space(6)
             width: parent.width
-            height: implicitHeight + Style.space(8)
+            height: implicitHeight + Style.space(12)
             horizontalAlignment: Text.AlignHCenter
-            text: "Everything that timed out or was held back is shown here."
+            text: "Nothing you missed."
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: Qt.darker(Color.notifications.text, 1.4)
             font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall * service.fontScale
+            font.pixelSize: Style.font.body * service.fontScale
           }
 
           // The panel's own pointer region, above the cards for the same
@@ -3214,17 +3316,43 @@ Item {
             acceptedButtons: Qt.NoButton
             propagateComposedEvents: true
 
+            // Everything below is in the list's own coordinates, which
+            // scroll; this region does not.
             function keyAt(x, y) {
-              var inList = mapToItem(missedColumn, x, y)
               if (y < missedViewport.y) return ""
-              var slot = missedColumn.childAt(inList.x, inList.y)
-              return slot && slot.key !== undefined ? String(slot.key) : ""
+              var ly = y - missedViewport.y + service.missedScroll
+              var places = service.missedLayout.placements
+              var found = "", topZ = -1
+              for (var key in places) {
+                var pl = places[key]
+                if (pl.hidden) continue
+                if (ly >= pl.y && ly <= pl.y + (pl.height || Style.space(58)) && pl.z > topZ) {
+                  found = key
+                  topZ = pl.z
+                }
+              }
+              return found
             }
             function track(x, y) {
-              var inList = mapToItem(missedColumn, x, y)
-              service.missedHoverX = inList.x
-              service.missedHoverY = inList.y
+              var ly = y - missedViewport.y + service.missedScroll
+              service.missedHoverX = x
+              service.missedHoverY = ly
               service.missedHoverKey = keyAt(x, y)
+              // Resting on a stack's front card opens that stack, as in the
+              // deck. Only the front card: the ones an open stack spread out
+              // below it must not open whichever stack they now overlap.
+              if (y < missedViewport.y) return
+              var decks = service.missedLayout.decks
+              for (var i = 0; i < decks.length; i++) {
+                var first = decks[i].rows[0]
+                var pl = service.missedLayout.placements[first.key]
+                if (!pl) continue
+                var bottom = pl.y + (service.missedHeights[first.key] || Style.space(58))
+                if (ly >= pl.y - Style.space(4) && ly <= bottom + Style.space(4)) {
+                  if (decks[i].rows.length > 1) service.openMissedDeck(decks[i].key)
+                  return
+                }
+              }
             }
 
             onContainsMouseChanged: {
