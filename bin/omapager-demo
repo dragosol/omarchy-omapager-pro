@@ -158,6 +158,39 @@ SCENES = {
         dict(web="x.com", image="x.png", summary="Elon Musk",
              body="commented on your post: cool"),
     ],
+    # Everything at once, for the store screenshot: several senders, two
+    # stacks building, a code with its button, a meeting with Join, and the X
+    # stack arriving last so it sits on top. Web sources throughout, because
+    # a site's icon resolves anywhere and a desktop app's only where its icon
+    # theme is installed.
+    "showcase": [
+        dict(web="open.spotify.com", summary="Now playing",
+             body="Money for Nothing \u00b7 Dire Straits", gap=0.5),
+        dict(web="github.com", summary="Review requested",
+             body="dragosol/omarchy-omapager-pro #42 \u00b7 <b>swipe a stack away in one go</b>", gap=0.5),
+        dict(web="linear.app", summary="OMA-218 assigned to you",
+             body="Panel should follow the fingers when it opens from the edge", gap=0.5),
+        dict(web="calendar.google.com", summary="Design review in 5 minutes",
+             body="Join: https://meet.google.com/xpr-omap-ger", gap=0.5),
+        dict(web="accounts.google.com", summary="Google",
+             body="Your verification code is 482913. Do not share it with anyone.", gap=0.5),
+        dict(web="web.whatsapp.com", summary="Seif Lotfy",
+             body="you have to show me that notification panel thing", gap=0.5),
+        dict(web="app.slack.com", summary="#design", gap=0.4,
+             body="Gurbinder: the stacks finally look like stacks"),
+        dict(web="app.slack.com", summary="#design", gap=0.4,
+             body="Dominic: two fingers from the edge and it just slides in"),
+        dict(web="app.slack.com", summary="#design", gap=0.5,
+             body="Gurbinder: shipping it before standup"),
+        dict(web="x.com", image="x.png", summary="52 people liked your post", gap=0.4,
+             body="\u201cOmapager Pro: two fingers from the right edge pulls in everything you missed\u201d"),
+        dict(web="x.com", image="x.png", summary="@tilingwm_tom replied", gap=0.4,
+             body="wait, the panel follows your fingers?? how"),
+        dict(web="x.com", image="x.png", summary="@hyprnerd reposted your post", gap=0.4,
+             body="swipe a whole stack away in one go. this is how notifications should work"),
+        dict(web="x.com", image="x.png", summary="Elon Musk",
+             body="commented on your post: cool"),
+    ],
     # Off the clock.
     "personal": [
         dict(app="Spotify", icon="spotify", summary="Now playing",
