@@ -682,6 +682,16 @@ for (const u of ['https://example.com/', 'https://sub.example.co.uk/', 'https://
   assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['/tmp/../etc/passwd'])), null);
   assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['-foo'])), null);
   assert.equal(S.parseOmarchyExecArgv(''), null);
+  // Omarchy's own clickable toasts (omarchy-notification-send --exec).
+  const crash = JSON.stringify(['omarchy-agent-crash', '4242', 'gnome-keyring-d', '/usr/bin/gnome-keyring-daemon', 'SEGV']);
+  assert.equal(JSON.stringify(S.parseOmarchyExecArgv(crash)), crash);
+  assert.ok(S.parseOmarchyExecArgv(JSON.stringify(['/usr/share/omarchy/bin/omarchy-agent-crash', '1'])));
+  assert.ok(S.parseOmarchyExecArgv(JSON.stringify(['/usr/bin/omarchy-agent-crash', '1'])));
+  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['/tmp/omarchy-agent-crash'])), null);
+  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['/home/u/.local/bin/omarchy-x'])), null);
+  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['/usr/share/omarchy/bin/tensaku'])), null);
+  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['omarchy-'])), null);
+  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['omarchy-X;id'])), null);
   const omarchy = Store.snapshot({
     appName: 'omarchy-action', summary: 'Screenshot saved',
     body: 'Edit with Super + Alt + ,', hints: { 'omarchy-exec-argv': shot }

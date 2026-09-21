@@ -1,5 +1,18 @@
 # Security changelog
 
+## Omapager Pro
+
+- A card click now runs the sender's `default` action by default
+  (`allowDefaultActionOnCardClick: true`), matching Omarchy's built-in
+  notification service. It is still only ever invoked by an explicit click,
+  and the setting turns it off. `security/check_invariants.py` now checks that
+  it stays a setting and stays gated by it.
+- `omarchy-exec-argv` also runs Omarchy's own `omarchy-*` commands (bare name,
+  or under `/usr/bin`, `/usr/local/bin` or `/usr/share/omarchy/bin`), because
+  Omarchy sends its clickable toasts that way - the crash watcher's "click to
+  diagnose with AI" runs `omarchy-agent-crash`. Other programs stay refused.
+
+
 ## Unreleased
 
 - Honour Omarchy screenshot toasts' `omarchy-exec-argv` on click and Super+Alt+,.

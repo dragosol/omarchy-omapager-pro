@@ -176,7 +176,7 @@ BarWidget {
     var align = String(setting("actionsAlign", "right"))
     if (align === "left" || align === "right") service.actionsAlign = align
     service.setFetchRemoteIcons(configuredFetchRemoteIcons)
-    service.allowDefaultActionOnCardClick = setting("allowDefaultActionOnCardClick", false) === true
+    service.allowDefaultActionOnCardClick = setting("allowDefaultActionOnCardClick", true) !== false
     var lifetime = Number(setting("clipboardTimeout", 60))
     service.clipboardTimeout = [30, 60, 90].indexOf(lifetime) >= 0 ? lifetime : 60
     var hours = Number(setting("historyHours", 24))

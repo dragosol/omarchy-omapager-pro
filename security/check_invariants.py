@@ -39,6 +39,10 @@ for path in (ROOT/'.github/workflows').glob('*.yml'):
 service=(ROOT/'Service.qml').read_text()
 for helper in ('store','icon','kdeconnect'):
     if f'"bin/omapager-{helper}"' in service:errors.append('raw helper launch: '+helper)
-if 'property bool allowDefaultActionOnCardClick: false' not in service:errors.append('default actions no longer opt-in')
+# Omapager Pro runs the sender's default action on a click by default, as
+# Omarchy's own notification service does; what must hold is that it stays a
+# setting, and that nothing but a click invokes it.
+if 'property bool allowDefaultActionOnCardClick:' not in service:errors.append('default action is no longer a setting')
+if 'if (allowDefaultActionOnCardClick && ref && ref.actions)' not in service:errors.append('default action no longer gated by its setting')
 if errors:raise SystemExit('\n'.join(errors))
 print('static security invariants: passed')

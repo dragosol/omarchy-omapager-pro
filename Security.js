@@ -75,10 +75,17 @@ function parseOmarchyExecArgv(value) {
   var prog = parsed[0]
   if (!prog || prog.charAt(0) === "-") return null
   var base = prog.substring(prog.lastIndexOf("/") + 1)
-  if (!/^(?:tensaku-edit|tensaku|satty|swappy|omasnap)$/.test(base)) return null
+  // The screenshot editors, and Omarchy's own commands. Omarchy sends its
+  // clickable toasts this way - "Process crashed: click to diagnose with AI"
+  // runs omarchy-agent-crash - and refusing them left those clicks doing
+  // nothing. omarchy-* commands are the ones the Omarchy package installs;
+  // an absolute path must point at the package's own directories.
+  var omarchy = /^omarchy-[a-z0-9][a-z0-9-]*$/.test(base)
+  if (!omarchy && !/^(?:tensaku-edit|tensaku|satty|swappy|omasnap)$/.test(base)) return null
   if (prog.charAt(0) === "/") {
     if (prog.indexOf("\0") >= 0 || /\/\.\.(?:\/|$)/.test(prog)) return null
-    if (prog !== "/usr/bin/" + base && prog !== "/usr/local/bin/" + base) return null
+    if (prog !== "/usr/bin/" + base && prog !== "/usr/local/bin/" + base
+        && !(omarchy && prog === "/usr/share/omarchy/bin/" + base)) return null
   } else if (prog.indexOf("/") >= 0 || !/^[A-Za-z0-9._+-]+$/.test(prog)) {
     return null
   }

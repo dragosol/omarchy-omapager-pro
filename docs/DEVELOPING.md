@@ -209,7 +209,8 @@ code-bearing notifications. Do not remove either boundary.
 Omarchy screenshot toasts carry `omarchy-exec-argv`. Click and the stock
 `notifications invokeLast` binding (Super+Alt+,) run it through
 `Security.parseOmarchyExecArgv` then `Quickshell.execDetached`. App names
-are claims, so only tensaku-edit, tensaku, satty, swappy and omasnap may
+are claims, so only tensaku-edit, tensaku, satty, swappy, omasnap and Omarchy's own
+omarchy-* commands may
 run, as a bare name or under /usr/bin and /usr/local/bin. Re-parse on
 activate. History never keeps the argv: `Store.sanitiseForPersistence`
 clears it and the Python store's field allowlist omits it.

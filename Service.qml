@@ -48,7 +48,10 @@ Item {
       sandboxProbeDelay.restart()
     }
   }
-  property bool allowDefaultActionOnCardClick: false
+  // On: a click does what the sender asked a click to do - Ghostty focuses the
+  // terminal a "Claude is waiting" toast came from - which is what Omarchy's
+  // own notification service does. Upstream kept it off by default.
+  property bool allowDefaultActionOnCardClick: true
   property int clipboardTimeout: 60
   property var sandboxStatus: ({ required: false, sandboxOperational: false, mode: "pending" })
   readonly property string helperBin: Qt.resolvedUrl("bin/omapager-run-helper").toString().replace(/^file:\/\//, "")

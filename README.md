@@ -221,7 +221,7 @@ below apply to new configurations, not choices you have already saved.
 | `recentCount` | `5` | Recent notifications shown in the panel, from 1 to 20. Clears on shell restart. |
 | `fetchRemoteIcons` | `true` | Fetch missing website icons. Turning it off keeps local and validated cached icons. Requires Pillow. Config-only. |
 | `requireSandbox` | `false` | Require Bubblewrap instead of allowing helpers to run directly when it is unavailable. Config-only. |
-| `allowDefaultActionOnCardClick` | `false` | Allow the app's default action on a card click. Explicit action buttons remain available when off. |
+| `allowDefaultActionOnCardClick` | `true` | A card click runs the app's default action - Ghostty focusing the terminal a "Claude is waiting" toast came from, say - as Omarchy's own notification service does. Off, a click only focuses a known window or opens the source's site. |
 | `historyHours` | `24` | Keep disk history for `1`, `24` or `168` hours, with a 100-entry cap. `0` disables it. |
 | `clipboardTimeout` | `60` | Clear copied codes after `30`, `60` or `90` seconds, unless the clipboard has changed. |
 
