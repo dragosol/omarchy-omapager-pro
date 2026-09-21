@@ -1335,10 +1335,17 @@ Item {
   property var missedHeights: ({})
   property int missedRevision: 0
   onMissedOpenDeckChanged: missedRevision += 1
-  readonly property var missedLayout: {
-    missedRevision
+  // A copy of the rows taken once per change, not the model itself: reading
+  // the model made this layout re-run in the middle of every insert, while
+  // the card being inserted was itself asking for its place in it.
+  property var missedRows: []
+  onMissedRevisionChanged: {
     var rows = []
     for (var i = 0; i < missed.count; i++) rows.push(missed.get(i))
+    missedRows = rows
+  }
+  readonly property var missedLayout: {
+    var rows = missedRows
     return Layout.compute(rows, {
       stacking: "source",
       expanded: missedOpenDeck !== "",
@@ -1919,12 +1926,20 @@ Item {
       var snap = service.snapshot(), deckNow = service.deckHeight
       if (at >= 0) {
         Store.applyTo(toasts, at, row)      // an update, in place
-        service.joinMissed(toasts.get(at))
+        Qt.callLater(function() {
+          var now = service.rowIndexFor(key)
+          if (now >= 0) service.joinMissed(toasts.get(now))
+        })
         service.retarget(undefined, undefined, snap, deckNow)
       } else {
         service.pinDeckDisplay()
         toasts.insert(0, row)
-        service.joinMissed(row)
+        // After this arrival has settled into the deck, not in the middle of
+        // it: creating a panel card here re-entered the deck's layout.
+        Qt.callLater(function() {
+          var at = service.rowIndexFor(key)
+          if (at >= 0) service.joinMissed(toasts.get(at))
+        })
         // Where it comes from: under the bar, transparent. The layout has
         // already made room for it, so this is the only thing the arrival
         // needs - the drop is the same move everything else is making.
@@ -2974,9 +2989,22 @@ Item {
       // Only the deck takes input; the rest of the surface stays
       // click-through. Tracking the item keeps the region honest as the deck
       // grows and shrinks.
+      // The deck's input follows the deck item. The panel's cannot follow
+      // its item: the panel slides by a transform, and a Region tracks an
+      // item's own geometry, not a parent's transform - so it was measured
+      // once, while the panel was still off to the side, and never moved.
+      // It only ever worked because the list used to load late and resize
+      // the panel after it had arrived. The rectangle is spelled out here,
+      // bound to the slide itself.
       mask: Region {
-        item: !surface.showingNotifications ? null
-              : service.missedVisible ? missedBody : deck
+        Region { item: surface.showingNotifications && !service.missedVisible ? deck : null }
+        Region {
+          readonly property bool on: surface.showingNotifications && service.missedVisible
+          x: missedPanel.x + missedBody.x + (1 - service.missedShown) * missedPanel.away
+          y: missedPanel.y + missedBody.y
+          width: on ? missedBody.width : 0
+          height: on ? missedBody.height : 0
+        }
       }
 
       // Clip arrivals at the configured deck edge. Reserve only enough
@@ -3373,7 +3401,11 @@ Item {
                   // comes in - the same fraction, so under the fingers it
                   // moves with them. `away` is how far it still has to go.
                   readonly property bool live: model.live === true
-                  readonly property var deckPlace: live ? service.placements[key] : null
+                  // Only while the panel is up: hidden, these cards exist all
+                  // the time, and reading the deck's layout from them tied
+                  // every arrival's layout pass to forty panel cards - a
+                  // binding loop that left the deck ignoring the pointer.
+                  readonly property var deckPlace: live && service.missedVisible ? service.placements[key] : null
                   readonly property real away: live && deckPlace ? 1 - service.missedShown : 0
                   readonly property real deckY: deckPlace ? deckPlace.y - service.scrollY : 0
                   readonly property real panelY: missedViewport.y + y - service.missedScroll
