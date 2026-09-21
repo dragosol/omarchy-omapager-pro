@@ -3347,7 +3347,11 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.topMargin: service.barClearance
-        anchors.bottomMargin: service.edgeSpacing
+        // To the screen's edge, not a gap short of it: a list clipped there
+        // drew a hard line through the last card with empty screen below it.
+        // The gap is kept where it belongs - under the last card, once you
+        // have scrolled to the end.
+        anchors.bottomMargin: 0
         width: clipper.width
         readonly property real away: width + Style.space(24)
         transform: Translate { x: (1 - service.missedShown) * missedPanel.away }
@@ -3363,7 +3367,7 @@ Item {
           // Down to the bottom of the screen whenever there is more than fits;
           // only as tall as its cards when there is not, so the empty strip
           // below a short list stays click-through.
-          height: Math.min(parent.height, missedViewport.y
+          height: Math.min(parent.height, missedViewport.y + service.edgeSpacing
                            + Math.max(service.missedLayout.height, missedEmpty.visible ? missedEmpty.height : 0))
 
           // The heading. A title the size of the cards' own, and room around
@@ -3461,7 +3465,7 @@ Item {
               target: service
               property: "missedScrollMax"
               when: surface.showingNotifications
-              value: Math.max(0, service.missedLayout.height - missedViewport.height)
+              value: Math.max(0, service.missedLayout.height + service.edgeSpacing - missedViewport.height)
             }
 
             Item {
