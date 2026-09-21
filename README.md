@@ -46,23 +46,17 @@ than the screen scroll instead of running off it.
 ## Features
 
 **Screen-sharing detection.** When you share a screen, window or area through
-the Hyprland portal, Omapager offers to snooze notifications for 30 minutes,
+the Hyprland portal, it offers to snooze notifications for 30 minutes,
 1 hour or 4 hours. Nothing is muted until you choose. You can disable these
 suggestions in preferences.
 
 **Grouped notifications.** Messages from the same source stack together. Hover
 to expand the group and read or act on each notification.
 
-<img src="assets/deck.gif" width="410" alt="Slack, WhatsApp and GitHub notifications arriving, grouping and expanding, followed by a Google code notification">
-
-[Watch the demo video](assets/deck.mp4).
-
 **Theme support.** Follows your Omarchy theme.
 
 **Code, link and phone actions.** Copy verification codes and phone numbers, or
 open links, directly from a notification. Multiple codes get separate buttons.
-
-<img src="assets/native-actions-2x.png" width="410" alt="Google verification notification with its source icon, Copy code action and compact close button">
 
 **Per-notification actions.** Use app-provided actions such as Mark as read
 without opening the app.
@@ -70,22 +64,20 @@ without opening the app.
 **Inline replies.** Reply to supported KDE Connect messages without leaving the
 notification.
 
-<img src="assets/reply.png" width="410" alt="Local reply demo using Seif Lotfy's original message, a WhatsApp icon and the native reply field">
-
 **Window focus.** Click a notification to focus its app or browser window.
 Web notifications open their source URL when no matching window is available.
 
 **Snooze and Do Not Disturb.** Right-click a notification to snooze its source.
-Use the panel to snooze everything or toggle Do Not Disturb.
+Use the bar panel to snooze everything or toggle Do Not Disturb.
 
 **Verification-code exception.** Let login codes through while notifications
-are snoozed or silenced. Turn this off with the key button in the panel.
+are snoozed or silenced. Turn this off with the key button in the bar panel.
 
 **Held notifications.** Read messages received while a source was snoozed in
-the panel's Held Back section.
+the bar panel's Held Back section.
 
 **Recent notifications.** Review recently dismissed or expired notifications
-by expanding Recent in the panel. The list clears when the shell restarts.
+by expanding Recent in the bar panel. The list clears when the shell restarts.
 
 **Notification history.** Expand History to read up to 100 closed notifications,
 newest first, including messages held while snoozed or silenced. Unlike Recent,
@@ -93,8 +85,6 @@ this list survives shell restarts and refreshes each time the panel opens.
 Click a card to expand its message, then scroll to read the rest. `historyHours`
 controls retention; `0` disables disk history. Detected verification codes stay
 redacted.
-
-<img src="assets/native-panel-2x.png" width="420" alt="Notification panel with recent messages from the demo scenes">
 
 **Source icons.** Use local icons or fetch missing website icons automatically.
 Set `fetchRemoteIcons` to `false` in the config to disable fetching.
@@ -183,10 +173,9 @@ want to remove the stored data. A per-source icon you dropped into
 
 ## Settings
 
-Open the panel and click the settings cog to choose a notification display,
-toggle countdown animation or control screen-sharing snooze suggestions.
-
-<img src="assets/display-settings-2x.png" width="420" alt="Notification preferences for display, countdown animation and screen-sharing snooze suggestions">
+Right-click the bar indicator to open its panel, then click the settings cog
+to choose a notification display, toggle countdown animation or control
+screen-sharing snooze suggestions.
 
 Changes save to the `io.github.dragosol.omapager-pro` bar-widget entry in
 `~/.config/omarchy/shell.json`. You can edit the other options there too.
