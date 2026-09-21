@@ -160,6 +160,9 @@ Item {
       out.push({ kind: "phone", label: "Copy number", value: String(row.phone) })
     if (String(row.replyPath || ""))
       out.push({ kind: "reply", label: "Reply", value: "" })
+    // The front card of a stack can clear the stack - what swiping it
+    // does, for a mouse. Last, after anything the message itself offers.
+    var stackDeed = stands > 1 ? { kind: "dismissGroup", label: "Clear stack", value: "" } : null
     for (var i = 0; i < actions.length; i++) {
       // The phone's own "Reply" action opens a window somewhere else; ours
       // types the answer here, so it wins and the duplicate is dropped.
@@ -167,6 +170,7 @@ Item {
         continue
       out.push({ kind: "action", label: String(actions[i].text || ""), value: String(actions[i].id) })
     }
+    if (stackDeed) out.push(stackDeed)
     return out
   }
 

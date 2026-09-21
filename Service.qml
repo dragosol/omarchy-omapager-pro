@@ -893,6 +893,7 @@ Item {
   property int swipeRevision: 0       // swipeKeys and thrown are plain maps
   property var thrown: ({})           // key -> true: flung off, now leaving
   property var lastWheel: ({})        // the last event, for probe
+  property var wheelLog: []           // the last few, for probe
 
   // Where a card is drawn sideways. A thrown card stays thrown until its row
   // is gone: snapping it back to the deck to fade out there would replay the
@@ -952,6 +953,30 @@ Item {
   }
 
   readonly property bool swipeBusy: throwRun.running || springRun.running
+
+  // "Clear stack" and the menu's "Dismiss all": the same exit a swipe of the
+  // stack's front card makes, so the stack is seen leaving rather than
+  // vanishing.
+  function throwGroup(key) {
+    if (swipeBusy) return
+    swipeKeys = swipeTargets(key)
+    if (swipeKeys.length < 2) swipeKeys = allOfGroup(key)
+    swipeRevision += 1
+    swipeX = 0
+    throwCarried({ x: 0, vx: 0, axis: "x" })
+  }
+  function allOfGroup(key) {
+    var group = "", i, row, out = []
+    for (i = 0; i < toasts.count; i++) {
+      row = toasts.get(i)
+      if (row.key === key) { group = Layout.groupKeyFor(row); break }
+    }
+    for (i = 0; i < toasts.count; i++) {
+      row = toasts.get(i)
+      if (!leaving[row.key] && Layout.groupKeyFor(row) === group) out.push(row.key)
+    }
+    return out
+  }
 
   NumberAnimation {
     id: throwRun
@@ -1013,6 +1038,9 @@ Item {
     var phase = ev.phase === undefined ? -1 : ev.phase
     lastWheel = { px: px.x, py: px.y, ax: ang.x, ay: ang.y, phase: phase,
                   inverted: !!ev.inverted, under: under || "" }
+    var log = wheelLog.slice(-40)
+    log.push([Math.round(px.x), Math.round(px.y), ang.x, ang.y, phase])
+    wheelLog = log
 
     // Fingers up. Carries no travel of its own.
     if (phase === Qt.ScrollEnd) { endGesture(); return true }
@@ -1238,7 +1266,16 @@ Item {
     missedRevision += 1
   }
 
+  function forgetGone(key) {
+    if (!missedGone[key]) return
+    var rest = {}
+    for (var k in missedGone) if (k !== key) rest[k] = true
+    missedGone = rest
+    missedGoneRevision += 1
+  }
+
   function leaveMissed(key) {
+    forgetGone(key)
     var at = missedIndex(key)
     if (at < 0 || !missed.get(at).live) return
     missed.remove(at)
@@ -1390,6 +1427,7 @@ Item {
       if (at < 0) continue
       if (missed.get(at).live) { closeToast(keys[i], "dismissed"); continue }
       stored.push(keys[i])
+      forgetGone(keys[i])
       missed.remove(at)
     }
     if (stored.length) {
@@ -1443,6 +1481,11 @@ Item {
   // scrolls it. The same reading of the fingers as the deck uses.
   property var missedGesture: null
   property string missedSwipeKey: ""     // "" = the panel itself
+  property var missedSwipeKeys: []       // what the fingers are carrying
+  // Thrown and on their way out: kept off the edge until their row is gone,
+  // or a live card - which takes a moment to close - flicks back first.
+  property var missedGone: ({})
+  property int missedGoneRevision: 0
   property real missedSwipeX: 0
   property real missedScroll: 0
   property string missedHoverKey: ""
@@ -1468,6 +1511,7 @@ Item {
     var sign = (ev.inverted || naturalScroll) ? 1 : -1
     missedGesture = Gesture.feed(missedGesture, px.x * sign, px.y * sign, Date.now())
     if (missedGesture.axis === "x") {
+      if (missedSwipeKey && !missedSwipeKeys.length) missedSwipeKeys = missedTargets(missedSwipeKey)
       if (missedSwipeKey) missedSwipeX = Gesture.drawn(missedGesture.x)
       else missedShown = Math.max(0, Math.min(1, 1 - Math.max(0, missedGesture.x) / notificationWidth))
     } else if (missedGesture.axis === "y") {
@@ -1480,6 +1524,37 @@ Item {
     missedScroll = Math.max(0, Math.min(missedScrollMax, missedScroll - dy))
   }
   onMissedScrollMaxChanged: if (missedScroll > missedScrollMax) missedScroll = missedScrollMax
+
+  // The front card of a stack wearing its count carries the stack; any
+  // other card only itself - the deck's rule.
+  function missedTargets(key) {
+    var place = missedLayout.placements[key]
+    if (!place || (place.count || 1) < 2) return [key]
+    var out = []
+    for (var k in missedLayout.placements)
+      if (missedLayout.placements[k].deck === place.deck) out.push(k)
+    return out
+  }
+
+  function throwMissedGroup(key) {
+    if (throwMissed.running || springMissed.running) return
+    missedSwipeKey = key
+    missedSwipeKeys = missedTargets(key)
+    if (missedSwipeKeys.length < 2) {
+      var at = missedIndex(key), keys = []
+      if (at >= 0) {
+        var group = Layout.groupKeyFor(missed.get(at))
+        for (var i = 0; i < missed.count; i++)
+          if (Layout.groupKeyFor(missed.get(i)) === group) keys.push(missed.get(i).key)
+      }
+      missedSwipeKeys = keys.length ? keys : [key]
+    }
+    missedSwipeX = 0
+    throwMissed.from = 0
+    throwMissed.to = notificationWidth + Style.space(24)
+    throwMissed.duration = 220
+    throwMissed.start()
+  }
 
   function endMissedGesture() {
     missedFingersUp.stop()
@@ -1506,10 +1581,16 @@ Item {
     target: service; property: "missedSwipeX"
     easing.type: Easing.OutCubic
     onFinished: {
-      var key = service.missedSwipeKey
+      var keys = service.missedSwipeKeys.length ? service.missedSwipeKeys : [service.missedSwipeKey]
+      var gone = {}
+      for (var k in service.missedGone) gone[k] = true
+      for (var i = 0; i < keys.length; i++) gone[keys[i]] = true
+      service.missedGone = gone
+      service.missedGoneRevision += 1
       service.missedSwipeKey = ""
+      service.missedSwipeKeys = []
       service.missedSwipeX = 0
-      service.dismissMissedGroupOrOne(key)
+      service.seeMissed(keys)
     }
   }
   NumberAnimation {
@@ -1517,7 +1598,7 @@ Item {
     target: service; property: "missedSwipeX"; to: 0
     duration: 260
     easing.type: Easing.OutBack
-    onFinished: service.missedSwipeKey = ""
+    onFinished: { service.missedSwipeKey = ""; service.missedSwipeKeys = [] }
   }
 
   // The same rule as the deck: the card wearing its group's count carries
@@ -2660,7 +2741,7 @@ Item {
         targetDisplay: service.targetDisplayName,
         notificationDisplays: service.displayMode === "all" ? service.displayNames : [service.targetDisplayName],
         swipeKeys: service.swipeKeys.length, swipeX: service.swipeX,
-        thrown: Object.keys(service.thrown).length, lastWheel: service.lastWheel,
+        thrown: Object.keys(service.thrown).length, lastWheel: service.lastWheel, wheelLog: service.wheelLog,
         naturalScroll: service.naturalScroll, windowBorderWidth: service.windowBorderWidth,
         scrollY: service.scrollY, scrollMax: service.scrollMax, deckRoom: service.deckRoom,
         layoutHeight: service.layout.height,
@@ -3018,10 +3099,15 @@ Item {
         anchors.topMargin: service.barClearance
         anchors.rightMargin: 0
         readonly property int motionInset: Style.spacing.sm
+        // Room to the left of the cards for a card pulled the wrong way to
+        // be seen giving and springing back, rather than cut off at its own
+        // edge. Transparent and outside the input mask, so it costs nothing.
+        readonly property int swipeRoom: Style.space(44)
+        readonly property int deckX: motionInset + swipeRoom
         // In from the screen's right edge - plus the bar's width, if the bar
         // is the thing occupying that edge.
         readonly property int edgeGap: service.edgeClearance
-        width: service.notificationWidth + motionInset + edgeGap
+        width: service.notificationWidth + deckX + edgeGap
         height: deck.y + deck.height + motionInset
         clip: true
         // Out of the way while the missed panel is in: the two occupy the
@@ -3033,7 +3119,7 @@ Item {
 
         Item {
           id: deck
-        x: clipper.motionInset
+        x: clipper.deckX
         width: service.notificationWidth
         // From the same clock as everything on it, so the clip and its
         // contents can never disagree mid-move - and never taller than the
@@ -3243,7 +3329,7 @@ Item {
 
             swipe: service.swipeOffsetFor(model.key, service.swipeRevision)
             groupSize: service.groupSizeOf(model.key, service.layoutRevision)
-            onDismissGroupRequested: service.dismissGroup(model.key)
+            onDismissGroupRequested: service.throwGroup(model.key)
             onDismissAllRequested: service.clearAll("dismissed")
           }
         }
@@ -3272,7 +3358,7 @@ Item {
 
         Item {
           id: missedBody
-          x: clipper.motionInset
+          x: clipper.deckX
           width: service.notificationWidth
           // Down to the bottom of the screen whenever there is more than fits;
           // only as tall as its cards when there is not, so the empty strip
@@ -3356,8 +3442,13 @@ Item {
 
           Item {
             id: missedViewport
+            // As wide as the panel, not as the cards: a card being swiped
+            // was clipped at its own edge, so it wiped away instead of
+            // sliding off the screen. The list inside sits back where the
+            // cards are.
+            x: -missedBody.x
             y: missedHeader.height + service.gap
-            width: parent.width
+            width: missedPanel.width
             height: parent.height - y
             // Not while the panel is travelling: the live cards are being
             // drawn back where the deck had them, which is outside this
@@ -3375,7 +3466,8 @@ Item {
 
             Item {
               id: missedList
-              width: parent.width
+              x: missedBody.x
+              width: missedBody.width
               height: service.missedLayout.height
               y: -service.missedScroll
 
@@ -3461,7 +3553,11 @@ Item {
                     windowBorderWidth: service.windowBorderWidth
                     actionsAlign: service.actionsAlign
                     now: service.nowTick
-                    swipe: service.missedSwipeKey === missedSlot.key ? service.missedSwipeX : 0
+                    swipe: {
+                      service.missedGoneRevision
+                      if (service.missedGone[missedSlot.key]) return service.notificationWidth + Style.space(24)
+                      return service.missedSwipeKeys.indexOf(missedSlot.key) >= 0 ? service.missedSwipeX : 0
+                    }
                     snoozeOptions: service.snoozeOptions
                     groupSize: service.missedGroupSize(missedSlot.key, service.missedCount)
                     onActivated: service.activateMissed(missedSlot.key)
@@ -3473,7 +3569,7 @@ Item {
                                            seconds)
                     }
                     onSilenceRequested: service.doNotDisturb = true
-                    onDismissGroupRequested: service.dismissMissedGroup(missedSlot.key)
+                    onDismissGroupRequested: service.throwMissedGroup(missedSlot.key)
                     onDismissAllRequested: service.clearMissed()
                   }
                 }
