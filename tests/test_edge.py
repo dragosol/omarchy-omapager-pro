@@ -120,18 +120,46 @@ class EdgeSwipeTest(unittest.TestCase):
             p.frame()
         self.assertEqual(p.out, [])
 
-    def test_a_third_finger_ends_it(self):
+    def test_a_late_third_finger_cancels_rather_than_releases(self):
+        # Well into the swipe: the panel has moved, so it must be told to
+        # go back - "end" could have left it open.
         p = Pad()
         p.down(0, W - 300, 900)
         p.down(1, W - 50, 900)
         p.frame()
-        for i in range(1, 6):
+        for i in range(1, 12):
             p.move(0, W - 300 - 80 * i, 900)
             p.move(1, W - 50 - 80 * i, 900)
             p.frame()
         p.down(2, 400, 900)
         p.frame()
-        self.assertEqual(p.kinds(), ["begin", "end"])
+        self.assertEqual(p.kinds(), ["begin", "cancel"])
+
+    def test_a_third_finger_inside_the_grace_never_moves_anything(self):
+        # The usual three-finger swipe: the third finger 40 ms behind.
+        p = Pad()
+        p.down(0, W - 300, 900)
+        p.down(1, W - 50, 900)
+        p.frame()
+        for i in range(1, 4):
+            p.move(0, W - 300 - 80 * i, 900)
+            p.move(1, W - 50 - 80 * i, 900)
+            p.frame(0.013)
+        p.down(2, W - 700, 900)
+        p.frame()
+        for i in range(4, 12):
+            for s, x in ((0, W - 300), (1, W - 50), (2, W - 700)):
+                p.move(s, x - 80 * i, 900)
+            p.frame()
+        self.assertEqual(p.out, [])
+
+    def test_progress_catches_up_after_the_grace(self):
+        # Fast fingers travel past START inside the grace; the first move
+        # reported afterwards already carries all of that travel.
+        p = Pad()
+        p.two(W - 60, 900, -900, steps=12, dt=0.012)
+        first = p.moves()[0]
+        self.assertGreater(first, 0.05)
 
     def test_one_finger_never_counts(self):
         p = Pad()

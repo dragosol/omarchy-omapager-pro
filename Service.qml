@@ -1150,6 +1150,7 @@ Item {
     if (verb === "begin") beginMissed()
     else if (verb === "move") followMissed(Number(parts[1]) || 0)
     else if (verb === "end") releaseMissed(Number(parts[1]) || 0, Number(parts[2]) || 0)
+    else if (verb === "cancel") cancelMissed()
   }
 
   // What you missed is read ahead of time, not when you ask for it. Reading
@@ -1330,6 +1331,14 @@ Item {
     } else {
       slideMissed(0, Math.max(120, 220 * missedShown))
     }
+  }
+
+  // The fingers turned out to be a three-finger swipe: back out, from
+  // wherever the panel had got to, however far that was.
+  function cancelMissed() {
+    if (!missedFollowing) return
+    missedFollowing = false
+    slideMissed(0, Math.max(120, 220 * missedShown))
   }
 
   function closeMissed() {

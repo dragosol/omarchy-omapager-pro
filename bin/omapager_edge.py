@@ -37,6 +37,7 @@ class EdgeSwipe:
         begin              two fingers came on at the edge and are moving in
         move <p>           p = leftward travel as a share of the pad's width
         end <p> <v>        fingers up; v = speed at release, widths per second
+        cancel             it was never this gesture: a third finger arrived
     """
 
     # How much of the pad counts as its right edge. Fingers that start off
@@ -53,6 +54,12 @@ class EdgeSwipe:
     # Fingers that sit on the edge this long without moving in are resting
     # there, not swiping.
     WINDOW = 0.8          # seconds
+    # A three-finger swipe does not land all at once: two fingers touch and
+    # the third follows a few tens of milliseconds later. Nothing moves on
+    # screen until two fingers have been down this long with no third, so a
+    # three-finger swipe off the edge never starts pulling the panel. The
+    # panel then catches up at once - it follows total travel, not deltas.
+    LATE = 0.07           # seconds
 
     def __init__(self, x_min, x_max, y_min=0, y_max=0):
         self.x_min, self.x_max = x_min, x_max
@@ -86,10 +93,11 @@ class EdgeSwipe:
             return self._frame(now)
         return []
 
-    def _finish(self):
+    def _finish(self, cancelled=False):
         out = []
         if self.begun:
-            out.append("end %.4f %.3f" % (max(0.0, self.last[0]), self.speed))
+            out.append("cancel" if cancelled
+                       else "end %.4f %.3f" % (max(0.0, self.last[0]), self.speed))
         self.armed, self.begun, self.speed, self.sent = None, False, 0.0, None
         return out
 
@@ -103,10 +111,16 @@ class EdgeSwipe:
             return out
         if self.spent:
             return []
+        if count > 2:
+            # A third finger means this was a three-finger swipe all along,
+            # with one finger late. Not a release: whatever the panel did so
+            # far is taken back.
+            self.spent = True
+            return self._finish(cancelled=True)
         if count != 2:
-            # A third finger is a different gesture, and a finger lifting
-            # ends this one: both are the fingers letting go of the panel.
-            if self.armed is not None or count > 2:
+            # A finger lifting ends it - two fingers never leave the pad in
+            # exactly the same frame.
+            if self.armed is not None:
                 self.spent = True
                 return self._finish()
             return []
@@ -134,7 +148,7 @@ class EdgeSwipe:
             if drift > self.DRIFT and drift > progress:
                 self.spent = True
                 return self._finish()
-            if progress < self.START:
+            if progress < self.START or now - start_time < self.LATE:
                 if now - start_time > self.WINDOW:
                     self.spent = True
                     return self._finish()
