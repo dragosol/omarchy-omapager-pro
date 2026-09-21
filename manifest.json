@@ -56,7 +56,8 @@
       "allowDefaultActionOnCardClick": false,
       "historyHours": 24,
       "clipboardTimeout": 60,
-      "fontScale": 100
+      "fontScale": 100,
+      "edgeSwipe": true
     },
     "schema": [
       {
@@ -87,6 +88,13 @@
         "label": "Show countdown animation",
         "description": "Animate the time remaining along the bottom of notifications. Notifications still expire normally when this is off.",
         "defaultValue": false
+      },
+      {
+        "key": "edgeSwipe",
+        "type": "boolean",
+        "label": "Swipe in from the right edge",
+        "description": "Two fingers sliding onto the touchpad over its right edge pull in what you missed - notifications that timed out or were held back - the way Notification Center opens on a Mac. Reading the touchpad needs a one-time rule: sudo ./install-touchpad-access.sh in the plugin folder.",
+        "defaultValue": true
       },
       {
         "key": "fontScale",

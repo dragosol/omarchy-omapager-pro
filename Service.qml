@@ -16,6 +16,7 @@ import Quickshell.Hyprland
 import Quickshell.Services.Notifications
 import Quickshell.Services.Pipewire
 import qs.Commons
+import qs.Ui
 
 import "Store.js" as Store
 import "Security.js" as Security
@@ -685,7 +686,13 @@ Item {
       copy.stored_image = path
       Store.write(storeProc, storeBin, "put", copy)
     }
-
+    // The missed panel's rows are history, not live: drawn with the icon,
+    // never written back.
+    for (var j = 0; j < missed.count; j++) {
+      var old = missed.get(j)
+      if (String(old.groupKey || old.source || old.app || "") === key && old.stored_image !== path)
+        missed.setProperty(j, "stored_image", path)
+    }
   }
 
   Process {
@@ -1043,6 +1050,330 @@ Item {
     // moves, so it takes the delta as Qt reports it.
     if (gesture.axis === "y") return scrollBy(px.y) || true
     return true
+  }
+
+  // --------------------------------------------------------- what you missed
+  //
+  // Two fingers coming onto the touchpad over its right edge pull in what you
+  // missed: every notification that left without you dealing with it -
+  // timed out, or held back by a snooze or Do Not Disturb. It follows the
+  // fingers the whole way in, as Notification Center does on a Mac; let go
+  // past the middle, or with a flick, and it stays.
+  //
+  // Only the device knows where on the pad fingers started, so a small
+  // helper reads it (bin/omapager-edge, sandboxed to that one device node)
+  // and streams begin / move / end. Reading the touchpad needs a one-time
+  // udev rule, install-touchpad-access.sh; without it this is simply off.
+  property bool edgeSwipe: true
+  property string edgeStatus: "off"     // off | starting | ready | no-access | no-touchpad | unavailable
+  readonly property string edgeBin: Qt.resolvedUrl("bin/omapager-run-edge").toString().replace(/^file:\/\//, "")
+  // How much of the pad's width pulls the panel fully in. A quarter of a
+  // wide laptop pad is about a finger's comfortable sweep.
+  readonly property real edgeFull: 0.22
+
+  ListModel { id: missed }
+  property int missedCount: 0
+  property real missedShown: 0          // 0 away .. 1 fully in, as drawn
+  property bool missedOpen: false       // settled in, not following fingers
+  property bool missedFollowing: false  // fingers are on it right now
+  property bool missedLoaded: false
+  property bool missedPointerIn: false
+  readonly property bool missedVisible: missedShown > 0.001 || missedOpen
+  readonly property int missedLimit: 30
+
+  Process {
+    id: edgeProc
+    environment: service.helperEnvironment
+    running: false
+    command: [service.edgeBin]
+    stdout: SplitParser { onRead: function(line) { service.edgeLine(String(line)) } }
+    onExited: function(code) {
+      // 3 is "no touchpad" or "no access", already reported on stdout; asking
+      // again every few seconds would not change either. Anything else - the
+      // pad vanishing over a suspend - is worth another go.
+      if (code === 3 || !service.edgeSwipe) return
+      if (service.edgeStatus !== "no-access" && service.edgeStatus !== "no-touchpad")
+        service.edgeStatus = code === 1 ? "unavailable" : "starting"
+      edgeRetry.restart()
+    }
+  }
+  Timer {
+    id: edgeRetry
+    interval: 3000
+    onTriggered: service.startEdge()
+  }
+  function startEdge() {
+    if (!edgeSwipe || !helperSettingsReady || edgeProc.running) return
+    edgeStatus = "starting"
+    edgeProc.running = true
+  }
+  onEdgeSwipeChanged: {
+    if (edgeSwipe) startEdge()
+    else { edgeRetry.stop(); edgeProc.running = false; edgeStatus = "off" }
+  }
+
+  function edgeLine(line) {
+    var parts = line.trim().split(/\s+/)
+    var verb = parts[0]
+    if (verb === "ready" || verb === "no-access" || verb === "no-touchpad") {
+      edgeStatus = verb
+      return
+    }
+    if (verb === "begin") beginMissed()
+    else if (verb === "move") followMissed(Number(parts[1]) || 0)
+    else if (verb === "end") releaseMissed(Number(parts[1]) || 0, Number(parts[2]) || 0)
+  }
+
+  Process {
+    id: missedProc
+    environment: service.helperEnvironment
+    running: false
+    command: [service.storeBin, "unseen", String(service.missedLimit)]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: service.loadMissed(Store.parseList(text))
+    }
+  }
+
+  function loadMissed(entries) {
+    missed.clear()
+    for (var i = 0; i < entries.length; i++) {
+      var row = Store.restored(entries[i])
+      if (!row) continue
+      row.duration = 0               // nothing in here times out
+      wantIcon(row)                  // the source's icon, as a live card gets it
+      missed.append(row)
+    }
+    missedCount = missed.count
+    missedLoaded = true
+  }
+
+  function refreshMissed() {
+    if (!helperSettingsReady || missedProc.running) return
+    missedProc.running = true
+  }
+
+  NumberAnimation {
+    id: missedSlide
+    target: service; property: "missedShown"
+    easing.type: Easing.OutCubic
+    onFinished: if (service.missedShown <= 0.001) service.missedOpen = false
+  }
+
+  function slideMissed(to, duration) {
+    missedSlide.stop()
+    missedSlide.from = missedShown
+    missedSlide.to = to
+    missedSlide.duration = duration || 260
+    missedSlide.start()
+  }
+
+  function beginMissed() {
+    if (missedOpen && missedShown >= 0.999) return
+    missedFollowing = true
+    missedSlide.stop()
+    if (!missedOpen) { missedLoaded = false; refreshMissed() }
+  }
+
+  function followMissed(progress) {
+    if (!missedFollowing) return
+    missedShown = Math.max(0, Math.min(1, progress / edgeFull))
+  }
+
+  // Let go: open if it came more than half way, or was flicked in, and go
+  // back out otherwise - from wherever it is, at the speed it was going.
+  function releaseMissed(progress, speed) {
+    if (!missedFollowing) return
+    missedFollowing = false
+    followMissed(progress)
+    missedFollowing = false
+    var open = missedShown > 0.45 || (speed > 0.9 && missedShown > 0.08)
+    if (open) {
+      missedOpen = true
+      slideMissed(1, Math.max(120, 260 * (1 - missedShown)))
+      missedAway.restart()
+    } else {
+      slideMissed(0, Math.max(120, 220 * missedShown))
+    }
+  }
+
+  function closeMissed() {
+    missedAway.stop()
+    missedFollowing = false
+    slideMissed(0, 220)
+  }
+
+  function openMissed() {
+    missedLoaded = false
+    refreshMissed()
+    missedOpen = true
+    slideMissed(1, 260)
+    missedAway.restart()
+  }
+
+  // It goes away by itself when you are done with it: soon after the pointer
+  // leaves it, or after a while if the pointer never went there at all. A
+  // layer surface never hears about a click somewhere else, which is how a
+  // Mac closes it.
+  Timer {
+    id: missedAway
+    interval: service.missedPointerIn ? 0 : (service.missedWasEntered ? 1500 : 9000)
+    running: false
+    onTriggered: if (!service.missedPointerIn && !service.missedFollowing) service.closeMissed()
+  }
+  property bool missedWasEntered: false
+  onMissedPointerInChanged: {
+    if (missedPointerIn) { missedWasEntered = true; missedAway.stop() }
+    else if (missedOpen) missedAway.restart()
+  }
+  onMissedOpenChanged: if (!missedOpen) { missedWasEntered = false; missedPointerIn = false }
+
+  function missedIndex(key) {
+    for (var i = 0; i < missed.count; i++) if (missed.get(i).key === key) return i
+    return -1
+  }
+
+  // Dealt with: it will not come back on the next swipe.
+  function seeMissed(keys) {
+    if (!keys.length) return
+    Store.write(storeProc, storeBin, "seen", null, keys)
+    for (var i = 0; i < keys.length; i++) {
+      var at = missedIndex(keys[i])
+      if (at >= 0) missed.remove(at)
+    }
+    missedCount = missed.count
+    if (!missed.count && missedOpen) closeMissed()
+  }
+
+  function dismissMissed(key) { seeMissed([key]) }
+
+  function dismissMissedGroup(key) {
+    var at = missedIndex(key)
+    if (at < 0) return
+    var group = Layout.groupKeyFor(missed.get(at)), keys = []
+    for (var i = 0; i < missed.count; i++)
+      if (Layout.groupKeyFor(missed.get(i)) === group) keys.push(missed.get(i).key)
+    seeMissed(keys)
+  }
+
+  function clearMissed() {
+    var keys = []
+    for (var i = 0; i < missed.count; i++) keys.push(missed.get(i).key)
+    seeMissed(keys)
+    closeMissed()
+  }
+
+  function missedGroupSize(key, revision) {
+    var at = missedIndex(key)
+    if (at < 0) return 1
+    var group = Layout.groupKeyFor(missed.get(at)), n = 0
+    for (var i = 0; i < missed.count; i++) if (Layout.groupKeyFor(missed.get(i)) === group) n += 1
+    return n
+  }
+
+  function activateMissed(key) {
+    var at = missedIndex(key)
+    if (at < 0) return
+    var row = missed.get(at)
+    var copy = { senderPid: row.senderPid, source: row.source, link: row.link }
+    seeMissed([key])
+    closeMissed()
+    routeRow(copy)
+  }
+
+  // Two fingers on the open panel: across a card throws that card away,
+  // across the panel's own header pushes the panel back out, up and down
+  // scrolls it. The same reading of the fingers as the deck uses.
+  property var missedGesture: null
+  property string missedSwipeKey: ""     // "" = the panel itself
+  property real missedSwipeX: 0
+  property real missedScroll: 0
+  property string missedHoverKey: ""
+  property real missedHoverX: -1
+  property real missedHoverY: -1
+  property real missedScrollMax: 0
+  Timer {
+    id: missedFingersUp
+    interval: Gesture.IDLE
+    onTriggered: service.endMissedGesture()
+  }
+
+  function missedWheel(ev, under) {
+    var px = ev.pixelDelta, phase = ev.phase === undefined ? -1 : ev.phase
+    if (phase === Qt.ScrollEnd) { endMissedGesture(); return true }
+    if (px.x === 0 && px.y === 0) {
+      scrollMissed(ev.angleDelta.y / 120 * Style.space(56))
+      return true
+    }
+    if (missedSlide.running || throwMissed.running) return true
+    if (!missedGesture) { missedGesture = Gesture.start(Date.now()); missedSwipeKey = under || "" }
+    missedFingersUp.restart()
+    var sign = (ev.inverted || naturalScroll) ? 1 : -1
+    missedGesture = Gesture.feed(missedGesture, px.x * sign, px.y * sign, Date.now())
+    if (missedGesture.axis === "x") {
+      if (missedSwipeKey) missedSwipeX = Gesture.drawn(missedGesture.x)
+      else missedShown = Math.max(0, Math.min(1, 1 - Math.max(0, missedGesture.x) / notificationWidth))
+    } else if (missedGesture.axis === "y") {
+      scrollMissed(px.y)
+    }
+    return true
+  }
+
+  function scrollMissed(dy) {
+    missedScroll = Math.max(0, Math.min(missedScrollMax, missedScroll - dy))
+  }
+
+  function endMissedGesture() {
+    missedFingersUp.stop()
+    var g = missedGesture
+    missedGesture = null
+    if (!g || g.axis !== "x") return
+    if (missedSwipeKey) {
+      if (Gesture.throws(g, notificationWidth)) {
+        throwMissed.from = missedSwipeX
+        throwMissed.to = notificationWidth + Style.space(24)
+        throwMissed.duration = Gesture.throwDuration(g, notificationWidth)
+        throwMissed.start()
+      } else {
+        springMissed.start()
+      }
+      return
+    }
+    if (Gesture.throws(g, notificationWidth) || missedShown < 0.55) closeMissed()
+    else slideMissed(1, 200)
+  }
+
+  NumberAnimation {
+    id: throwMissed
+    target: service; property: "missedSwipeX"
+    easing.type: Easing.OutCubic
+    onFinished: {
+      var key = service.missedSwipeKey
+      service.missedSwipeKey = ""
+      service.missedSwipeX = 0
+      service.dismissMissedGroupOrOne(key)
+    }
+  }
+  NumberAnimation {
+    id: springMissed
+    target: service; property: "missedSwipeX"; to: 0
+    duration: 260
+    easing.type: Easing.OutBack
+    onFinished: service.missedSwipeKey = ""
+  }
+
+  // The same rule as the deck: the card wearing its group's count carries
+  // the group.
+  function dismissMissedGroupOrOne(key) {
+    if (missedGroupSize(key, 0) > 1 && missedIndex(key) === missedFrontOf(key)) dismissMissedGroup(key)
+    else dismissMissed(key)
+  }
+  function missedFrontOf(key) {
+    var at = missedIndex(key)
+    if (at < 0) return -1
+    var group = Layout.groupKeyFor(missed.get(at))
+    for (var i = 0; i < missed.count; i++) if (Layout.groupKeyFor(missed.get(i)) === group) return i
+    return -1
   }
 
   // Whether the touchpad scrolls naturally, from Hyprland itself: Qt's own
@@ -1762,28 +2093,30 @@ Item {
       }
     }
 
-    if (!handled) {
-      if (row) {
-        // Source first, link last. A Slack message quoting a link to
-        // somewhere else is still a Slack notification: clicking it should
-        // take you to Slack, not to whatever URL happened to be in the text.
-        // That link already has its own button. Checked against 300 stored
-        // notifications, where the wrong order would have sent 20 clicks to
-        // the wrong place - including a Slack card that would have opened
-        // axiom.co.
-        // The sender's own window first, then the source's, then the site.
-        var win = windowForPid(row.senderPid) || windowForSource(row.source)
-        if (win) focusWindow(win)
-        // Not `indexOf(".") > 0`. A source is lifted out of text the sender
-        // wrote, and "https://" + it is a URL going wherever it says - so it
-        // has to be a hostname by the same test omapager-icon uses before it
-        // will fetch anything, not merely a string with a dot in it.
-        else if (Markup.hostname(row.source))
-          Security.openExternalUrl("https://" + Markup.hostname(row.source) + "/")
-        else if (String(row.link || "")) Security.openExternalUrl(String(row.link))
-      }
-    }
+    if (!handled && row) routeRow(row)
     closeToast(key, "activated")
+  }
+
+  // Where a click on this row goes, when the sender has no action of its own
+  // to run. Shared by live cards and missed ones, which never have a sender.
+  function routeRow(row) {
+    // Source first, link last. A Slack message quoting a link to
+    // somewhere else is still a Slack notification: clicking it should
+    // take you to Slack, not to whatever URL happened to be in the text.
+    // That link already has its own button. Checked against 300 stored
+    // notifications, where the wrong order would have sent 20 clicks to
+    // the wrong place - including a Slack card that would have opened
+    // axiom.co.
+    // The sender's own window first, then the source's, then the site.
+    var win = windowForPid(row.senderPid) || windowForSource(row.source)
+    if (win) focusWindow(win)
+    // Not `indexOf(".") > 0`. A source is lifted out of text the sender
+    // wrote, and "https://" + it is a URL going wherever it says - so it
+    // has to be a hostname by the same test omapager-icon uses before it
+    // will fetch anything, not merely a string with a dot in it.
+    else if (Markup.hostname(row.source))
+      Security.openExternalUrl("https://" + Markup.hostname(row.source) + "/")
+    else if (String(row.link || "")) Security.openExternalUrl(String(row.link))
   }
 
   // ------------------------------------------------------------- replying
@@ -2095,6 +2428,7 @@ Item {
   // a stored requireSandbox=true could be bypassed during service startup.
   onHelperSettingsReadyChanged: if (helperSettingsReady) Qt.callLater(function() {
     sandboxProbe.running = true
+    service.startEdge()
     restoreProc.running = true
     quietRestoreProc.running = true
     tidyProc.running = true
@@ -2141,7 +2475,10 @@ Item {
         thrown: Object.keys(service.thrown).length, lastWheel: service.lastWheel,
         naturalScroll: service.naturalScroll,
         scrollY: service.scrollY, scrollMax: service.scrollMax, deckRoom: service.deckRoom,
-        layoutHeight: service.layout.height})
+        layoutHeight: service.layout.height,
+        edgeSwipe: service.edgeSwipe, edgeStatus: service.edgeStatus,
+        missedShown: service.missedShown, missedOpen: service.missedOpen,
+        missedCount: service.missedCount, missedLoaded: service.missedLoaded})
     }
     function clear(): string { service.clearAll("cleared"); return "ok" }
 
@@ -2162,6 +2499,21 @@ Item {
       var throws = Gesture.throws(g, service.notificationWidth)
       service.endGesture()
       return (throws ? "thrown " : "sprung ") + carried
+    }
+    // The missed panel, as the edge swipe would bring it in: "" toggles,
+    // "open" / "close" say which. For a keybinding, and for a desktop
+    // without a touchpad the helper can read.
+    function missed(how: string): string {
+      var open = how === "open" || (how !== "close" && !service.missedOpen)
+      if (open) service.openMissed()
+      else service.closeMissed()
+      return open ? "open" : "closed"
+    }
+    // Pull it in by hand: begin, then move <fraction of the pad>, then end
+    // <fraction> <widths per second> - the helper's own words.
+    function edge(line: string): string {
+      service.edgeLine(line)
+      return String(Math.round(service.missedShown * 100)) + "%"
     }
     function scroll(px: string): string {
       service.scrollBy(-(Number(px) || 0))
@@ -2441,7 +2793,10 @@ Item {
       // Only the deck takes input; the rest of the surface stays
       // click-through. Tracking the item keeps the region honest as the deck
       // grows and shrinks.
-      mask: Region { item: surface.showingNotifications ? deck : null }
+      mask: Region {
+        item: !surface.showingNotifications ? null
+              : service.missedVisible ? missedBody : deck
+      }
 
       // Clip arrivals at the configured deck edge. Reserve only enough
       // side/bottom room for their scale animation; native notification
@@ -2460,6 +2815,9 @@ Item {
         width: service.notificationWidth + motionInset + edgeGap
         height: deck.y + deck.height + motionInset
         clip: true
+        // Out of the way while the missed panel is in: the two occupy the
+        // same strip of screen, and the panel is what the fingers asked for.
+        opacity: 1 - service.missedShown
 
         Item {
           id: deck
@@ -2678,6 +3036,208 @@ Item {
         }
         }
       }
+      }
+
+      // What you missed, pulled in from the right edge by two fingers. It
+      // rides on the fingers - `missedShown` is how far in they have brought
+      // it - and is otherwise the deck's own cards in a column.
+      Item {
+        id: missedPanel
+        visible: surface.showingNotifications && service.missedVisible
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.topMargin: service.barClearance
+        anchors.bottomMargin: service.edgeSpacing
+        width: clipper.width
+        readonly property real away: width + Style.space(24)
+        transform: Translate { x: (1 - service.missedShown) * missedPanel.away }
+        opacity: Math.min(1, service.missedShown * 1.5)
+
+        Item {
+          id: missedBody
+          x: clipper.motionInset
+          width: service.notificationWidth
+          height: Math.min(parent.height, missedViewport.y + missedColumn.height
+                                          + (missedEmpty.visible ? missedEmpty.height : 0))
+
+          // The heading: what this is, how much of it there is, and the two
+          // ways out that do not need a gesture.
+          BorderSurface {
+            id: missedHeader
+            width: parent.width
+            height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(12)
+            radius: Style.cornerRadius
+            color: Color.notifications.background
+            borderSpec: Border.surfaceSpec("notifications", "border", Color.notifications.border,
+                                           Math.max(1, Style.space(2)))
+
+            Text {
+              id: missedTitle
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(14)
+              anchors.verticalCenter: parent.verticalCenter
+              text: !service.missedLoaded ? "Missed"
+                    : service.missedCount === 0 ? "Nothing missed"
+                    : "Missed · " + service.missedCount
+              textFormat: Text.PlainText
+              color: Color.notifications.text
+              font.family: "Liberation Sans"
+              font.pixelSize: Style.font.title * service.fontScale
+              font.bold: true
+            }
+
+            Row {
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(6)
+
+              Button {
+                id: missedClear
+                visible: service.missedCount > 0
+                text: "Clear all"
+                bordered: true
+                foreground: Color.notifications.text
+                fontFamily: Style.font.family
+                fontSize: Style.font.caption * service.fontScale
+                horizontalPadding: Style.space(8)
+                verticalPadding: Style.space(2)
+                onClicked: service.clearMissed()
+              }
+              Button {
+                text: "✕"
+                bordered: true
+                implicitWidth: implicitHeight
+                foreground: Color.notifications.text
+                fontFamily: Style.font.family
+                fontSize: Style.font.caption * service.fontScale
+                horizontalPadding: Style.space(4)
+                verticalPadding: Style.space(2)
+                onClicked: service.closeMissed()
+              }
+            }
+          }
+
+          Item {
+            id: missedViewport
+            y: missedHeader.height + service.gap
+            width: parent.width
+            height: parent.height - y
+            clip: true
+
+            Binding {
+              target: service
+              property: "missedScrollMax"
+              when: surface.showingNotifications
+              value: Math.max(0, missedColumn.height - missedViewport.height)
+            }
+
+            Column {
+              id: missedColumn
+              width: parent.width
+              y: -service.missedScroll
+              spacing: service.gap
+              move: Transition {
+                NumberAnimation { properties: "y"; duration: 200; easing.type: Easing.OutCubic }
+              }
+
+              Repeater {
+                model: missed
+
+                Item {
+                  id: missedSlot
+                  required property var model
+                  readonly property string key: String(model.key)
+                  width: missedColumn.width
+                  height: missedCard.height
+
+                  Toast {
+                    id: missedCard
+                    row: missedSlot.model
+                    scene: null
+                    cardWidth: missedSlot.width
+                    // Every card here is read, not scanned: open, at three
+                    // lines, opening the rest of the way under a resting
+                    // pointer - the deck's crowded rule, for the same reason.
+                    place: ({ y: 0, scale: 1, opacity: 1, z: 1, front: true,
+                              hidden: false, count: 1, size: 99 })
+                    expanded: true
+                    hovered: service.missedHoverKey === missedSlot.key
+                    hoverX: service.missedHoverX - missedSlot.x
+                    hoverY: service.missedHoverY - missedSlot.y
+                    fontScale: service.fontScale
+                    actionsAlign: service.actionsAlign
+                    now: service.nowTick
+                    swipe: service.missedSwipeKey === missedSlot.key ? service.missedSwipeX : 0
+                    snoozeOptions: service.snoozeOptions
+                    groupSize: service.missedGroupSize(missedSlot.key, service.missedCount)
+                    onActivated: service.activateMissed(missedSlot.key)
+                    onDismissed: service.dismissMissed(missedSlot.key)
+                    onOfferTaken: function(kind, value) { service.takeOffer(kind, value, "") }
+                    onSnoozeRequested: function(seconds) {
+                      service.snoozeSource(String(missedSlot.model.groupKey || ""),
+                                           String(missedSlot.model.source || missedSlot.model.app || ""),
+                                           seconds)
+                    }
+                    onSilenceRequested: service.doNotDisturb = true
+                    onDismissGroupRequested: service.dismissMissedGroup(missedSlot.key)
+                    onDismissAllRequested: service.clearMissed()
+                  }
+                }
+              }
+            }
+          }
+
+          Text {
+            id: missedEmpty
+            visible: service.missedLoaded && service.missedCount === 0
+            y: missedViewport.y
+            width: parent.width
+            height: implicitHeight + Style.space(8)
+            horizontalAlignment: Text.AlignHCenter
+            text: "Everything that timed out or was held back is shown here."
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: Qt.darker(Color.notifications.text, 1.4)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall * service.fontScale
+          }
+
+          // The panel's own pointer region, above the cards for the same
+          // reason as the deck's: a card that took hover would starve it.
+          MouseArea {
+            id: missedHover
+            z: 5000
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.NoButton
+            propagateComposedEvents: true
+
+            function keyAt(x, y) {
+              var inList = mapToItem(missedColumn, x, y)
+              if (y < missedViewport.y) return ""
+              var slot = missedColumn.childAt(inList.x, inList.y)
+              return slot && slot.key !== undefined ? String(slot.key) : ""
+            }
+            function track(x, y) {
+              var inList = mapToItem(missedColumn, x, y)
+              service.missedHoverX = inList.x
+              service.missedHoverY = inList.y
+              service.missedHoverKey = keyAt(x, y)
+            }
+
+            onContainsMouseChanged: {
+              service.missedPointerIn = containsMouse
+              if (!containsMouse) service.missedHoverKey = ""
+            }
+            onPositionChanged: function(mouse) { track(mouse.x, mouse.y) }
+            onWheel: function(wheel) {
+              track(wheel.x, wheel.y)
+              wheel.accepted = service.missedWheel(wheel, keyAt(wheel.x, wheel.y))
+            }
+          }
+        }
       }
     }
   }

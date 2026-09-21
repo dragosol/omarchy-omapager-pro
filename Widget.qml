@@ -70,6 +70,7 @@ BarWidget {
   readonly property string configuredDisplayName: String(setting("displayName", "") || "")
   readonly property bool configuredOfferSnoozeWhenSharing: setting("offerSnoozeWhenSharing", true) !== false
   readonly property bool configuredShowCountdown: setting("showCountdown", false) === true
+  readonly property bool configuredEdgeSwipe: setting("edgeSwipe", true) !== false
   readonly property bool configuredFetchRemoteIcons: setting("fetchRemoteIcons", true) !== false
   readonly property bool configuredRequireSandbox: setting("requireSandbox", false) === true
   readonly property int configuredEdgeSpacing: {
@@ -171,6 +172,7 @@ BarWidget {
     service.fontScale = isFinite(fontScale) ? Math.max(75, Math.min(200, fontScale)) / 100 : 1
     service.edgeSpacing = configuredEdgeSpacing
     service.showCountdown = configuredShowCountdown
+    service.edgeSwipe = configuredEdgeSwipe
     var align = String(setting("actionsAlign", "right"))
     if (align === "left" || align === "right") service.actionsAlign = align
     service.setFetchRemoteIcons(configuredFetchRemoteIcons)
@@ -674,6 +676,56 @@ BarWidget {
               Text {
                 width: parent.width
                 text: "Show time remaining before a notification expires."
+                textFormat: Text.PlainText
+                color: Qt.darker(pager.panelFg, 1.4)
+                font.family: pager.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                wrapMode: Text.WordWrap
+              }
+            }
+
+            PanelSeparator { foreground: pager.panelFg }
+
+            Column {
+              width: parent.width
+              spacing: Style.spacing.lg
+
+              Row {
+                width: parent.width
+                spacing: Style.spacing.controlGap
+
+                Text {
+                  width: parent.width - edgeSwitch.width - parent.spacing
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "Swipe in from the right edge"
+                  textFormat: Text.PlainText
+                  color: pager.panelFg
+                  font.family: pager.fontFamily
+                  font.pixelSize: Style.font.body
+                  wrapMode: Text.WordWrap
+                }
+
+                ToggleSwitch {
+                  id: edgeSwitch
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: pager.configuredEdgeSwipe
+                  foreground: pager.panelFg
+                  onToggled: pager.persistSettings({ edgeSwipe: !pager.configuredEdgeSwipe })
+                }
+              }
+
+              Text {
+                width: parent.width
+                // Says what is actually happening, because the one thing that
+                // stops it - touchpad access - is fixed outside the shell.
+                text: {
+                  var st = pager.service ? pager.service.edgeStatus : "off"
+                  if (st === "no-access")
+                    return "Needs touchpad access, once: sudo ./install-touchpad-access.sh in the plugin folder, then restart the shell."
+                  if (st === "no-touchpad") return "No touchpad found."
+                  if (st === "unavailable") return "The touchpad reader could not start."
+                  return "Two fingers sliding onto the touchpad over its right edge pull in what you missed."
+                }
                 textFormat: Text.PlainText
                 color: Qt.darker(pager.panelFg, 1.4)
                 font.family: pager.fontFamily

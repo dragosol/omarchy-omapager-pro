@@ -121,7 +121,8 @@ def sanitise(entry):
     # Independently defend raw helper callers and legacy state migrations.
     allowed = {"key", "originalId", "senderPid", "app", "appIcon", "summary",
                "body", "rawBody", "bodyLine", "source", "groupKey", "urgency",
-               "expireTimeout", "duration", "ts", "closed_ts", "closed_reason"}
+               "expireTimeout", "duration", "ts", "closed_ts", "closed_reason",
+               "seen"}
     # Scan the same bounded summary/rawBody/body fields as Store's redaction,
     # not metadata: keys/groupKey and app names can contain unrelated numbers
     # or product keywords. This independent detector strips raw tags before
@@ -262,6 +263,46 @@ def cmd_held(limit):
     return 0
 
 
+# What you missed, for the edge swipe: everything that left without you
+# dealing with it - it timed out on its own, or it was held back by a snooze
+# or Do Not Disturb. What you dismissed you have seen, and stays gone; so does
+# anything you have since dismissed from the missed panel ("seen").
+MISSED_REASONS = ("expired", "snoozed", "silenced")
+
+
+def cmd_unseen(limit):
+    out = []
+    for name in sorted(os.listdir(HISTORY), reverse=True):
+        if not name.endswith(".json"):
+            continue
+        entry = read_json(os.path.join(HISTORY, name))
+        if (entry is not None and entry.get("closed_reason") in MISSED_REASONS
+                and not entry.get("seen")):
+            out.append(entry)
+            if len(out) >= limit:
+                break
+    json.dump(out, sys.stdout, separators=(",", ":"))
+    return 0
+
+
+def cmd_seen(keys):
+    wanted = {k for k in keys if re.fullmatch(r"[A-Za-z0-9_-]{1,120}", str(k))}
+    if not wanted:
+        return 0
+    for name in os.listdir(HISTORY):
+        if not name.endswith(".json"):
+            continue
+        # <closed ms>-<key>.json; the key is everything after the first dash.
+        if name[:-5].split("-", 1)[-1] not in wanted:
+            continue
+        path = os.path.join(HISTORY, name)
+        entry = read_json(path)
+        if entry is not None and not entry.get("seen"):
+            entry["seen"] = True
+            write_json(path, sanitise(entry))
+    return 0
+
+
 def cmd_forget_all():
     for name in os.listdir(HISTORY):
         try:
@@ -323,6 +364,10 @@ def main():
         return 0
     if verb == "held":
         return cmd_held(int(args[1]) if len(args) > 1 else 60)
+    if verb == "unseen":
+        return cmd_unseen(max(1, min(100, int(args[1]) if len(args) > 1 else 30)))
+    if verb == "seen":
+        return cmd_seen(args[1:51])
     if verb == "forget-all":
         return cmd_forget_all()
     if verb == "quiet":

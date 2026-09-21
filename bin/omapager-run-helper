@@ -21,7 +21,13 @@ HOME_DIR = Path.home()
 STATE = HOME_DIR / ".local/state/omarchy/omapager"
 BWRAP = Path("/usr/bin/bwrap")
 PYTHON = Path("/usr/bin/python3")
-HELPER_KINDS = frozenset(("store", "icon", "kdeconnect"))
+HELPER_KINDS = frozenset(("store", "icon", "kdeconnect", "edge"))
+# Helpers that run for the whole session rather than for one request. They get
+# no deadline and no CPU budget - a touchpad watcher is idle in read() nearly
+# all the time, but over a day of use its few milliseconds per swipe add up
+# past any per-process allowance a one-shot helper gets.
+LONG_RUNNING = frozenset(("edge",))
+UDEV_DATA = Path("/run/udev/data")
 TERMINATE_GRACE = 2
 SENDER_PATH_BYTES = 4096
 SENDER_IMAGE_BYTES = 1024 * 1024
@@ -112,6 +118,35 @@ def open_sender_image(stream):
         raise
 
 
+def find_touchpad():
+    """The touchpad's event node, chosen here and never by the caller.
+
+    udev has already classified every input device; its database says which
+    one is a touchpad, which is sturdier than guessing from a device name.
+    """
+    try:
+        names = sorted(os.listdir(UDEV_DATA))
+    except OSError:
+        return None
+    for name in names:
+        match = re.fullmatch(r"c13:([0-9]+)", name)
+        if not match or int(match.group(1)) < 64:
+            continue                      # event nodes start at minor 64
+        try:
+            with open(UDEV_DATA / name, encoding="utf-8", errors="replace") as data:
+                if "E:ID_INPUT_TOUCHPAD=1" not in data.read(65536).splitlines():
+                    continue
+        except OSError:
+            continue
+        node = Path("/dev/input/event%d" % (int(match.group(1)) - 64))
+        try:
+            if stat.S_ISCHR(os.stat(node).st_mode):
+                return node
+        except OSError:
+            continue
+    return None
+
+
 def python_helper(kind, args, root="/opt/omapager"):
     if kind not in HELPER_KINDS:
         raise ValueError("unknown helper")
@@ -155,6 +190,13 @@ def sandbox_command(kind, args, bwrap, environ):
             for name in ("/etc/resolv.conf", "/etc/ssl/certs", "/etc/ca-certificates"):
                 if Path(name).exists():
                     cmd += ["--ro-bind", name, name]
+    elif kind == "edge":
+        # The one device node, and nothing else under /dev/input: no keyboard,
+        # no other pointer. No state, no network - --unshare-all already
+        # took that.
+        if len(args) != 1 or not re.fullmatch(r"/dev/input/event[0-9]+", args[0]):
+            raise ValueError("invalid touchpad")
+        cmd += ["--dev-bind", args[0], args[0]]
     elif kind == "kdeconnect":
         bus_environment, bus = validated_bus_environment(environ)
         cmd += ["--ro-bind", str(bus), str(bus)]
@@ -187,16 +229,17 @@ def direct_environment(kind, environ):
     return clean_environment(extra)
 
 
-def limits():
+def limits(long_running=False):
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
+    if not long_running:
+        resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
     resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
     resource.setrlimit(resource.RLIMIT_FSIZE, (2 * 1024 * 1024, 2 * 1024 * 1024))
 
 
-def prepare_child(signal_mask):
+def prepare_child(signal_mask, long_running=False):
     signal.pthread_sigmask(signal.SIG_SETMASK, signal_mask)
-    limits()
+    limits(long_running)
 
 
 def stop_process_group(proc):
@@ -237,7 +280,7 @@ def stop_process_group(proc):
         pass
 
 
-def run_supervised(argv, environ, timeout, stdin_descriptor=None):
+def run_supervised(argv, environ, timeout, stdin_descriptor=None, long_running=False):
     handled_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
     previous = {}
 
@@ -253,7 +296,7 @@ def run_supervised(argv, environ, timeout, stdin_descriptor=None):
         # Output streams deliberately inherit unchanged. A supplied descriptor
         # becomes child stdin without exposing its source path to argv or logs.
         # The child is a session leader so termination and deadlines reap its group.
-        child_setup = partial(prepare_child, old_mask)
+        child_setup = partial(prepare_child, old_mask, long_running)
         proc = subprocess.Popen(argv, env=environ, preexec_fn=child_setup,
                                 stdin=stdin_descriptor, start_new_session=True)
         masked = False
@@ -316,7 +359,9 @@ def run_helper(kind, args, required, environ, stdin_descriptor=None):
         child_environment = direct_environment(kind, environ)
     # This is the sole actual-helper execution. A failure is returned directly;
     # it is never replayed in a less restricted mode.
-    return run_supervised(argv, child_environment, 45, stdin_descriptor)
+    long_running = kind in LONG_RUNNING
+    return run_supervised(argv, child_environment, None if long_running else 45,
+                          stdin_descriptor, long_running)
 
 
 def main(argv=None, environ=None):
@@ -335,6 +380,19 @@ def main(argv=None, environ=None):
             return 0
         if kind == "capabilities":
             return 0 if executable(Path("/usr/bin/wl-copy")) and executable(Path("/usr/bin/wl-paste")) else 1
+        if kind == "edge":
+            # Takes no arguments: the device is found here, so nothing the
+            # shell passes can point the helper at a keyboard.
+            if args:
+                raise ValueError("edge takes no arguments")
+            pad = find_touchpad()
+            if pad is None:
+                print("no-touchpad", flush=True)
+                return 3
+            if not os.access(pad, os.R_OK):
+                print("no-access", flush=True)
+                return 3
+            return run_helper(kind, [str(pad)], required, environ)
         if kind == "icon" and args == ["--sender-image"]:
             sender_fd = open_sender_image(sys.stdin.buffer)
             try:
