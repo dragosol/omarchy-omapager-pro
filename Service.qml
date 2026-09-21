@@ -1756,7 +1756,8 @@ Item {
     for (var key in placements)
       snap[key] = { y: at(key, "y"), scale: at(key, "scale"),
                     opacity: at(key, "opacity"), height: at(key, "height"),
-                    size: placements[key].size }
+                    size: placements[key].size,
+                    z: placements[key].z, front: placements[key].front }
     return snap
   }
 
@@ -1796,8 +1797,15 @@ Item {
     // one in a collapsed deck draws no content - correct while it is a peek of
     // an edge, wrong for one that is fading in place, which blanked itself for
     // a frame and read as a flash.
+    // ...but only the card that WAS in front. One from further back in a
+    // shut stack kept jumping to the top of it and fading out there, in
+    // front of the card it had been hiding behind. It keeps its depth -
+    // just under whatever slides into its slot - and stays a blank edge.
+    var behind = prev && prev.front === false
     return { y: prev ? prev.y : 0, scale: prev ? prev.scale : 1, opacity: 0,
-             height: prev ? prev.height : 0, z: 2000, front: true,
+             height: prev ? prev.height : 0,
+             z: behind && prev.z !== undefined ? prev.z - 0.5 : 2000,
+             front: !behind,
              hidden: false, count: 1,
              // The deck it was in, as far as the card's own sizing goes: a
              // card that changed its line count on the way out would move
