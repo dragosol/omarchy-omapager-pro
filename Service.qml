@@ -1019,10 +1019,44 @@ Item {
     for (var j = 0; j < keys.length; j++) closeToast(keys[j], "dismissed")
   }
 
+  // A card pulled LEFT - towards the screen rather than off it - brings the
+  // Notifications panel in behind it, following the hand. The discoverable
+  // way in, for anyone who never reads a README: the obvious thing to try on
+  // a notification is to push it around, and one direction throws it away
+  // while the other shows where it goes. Only while the panel is not up.
+  property bool pullingPanel: false
+  readonly property real pullSpan: notificationWidth * 0.9
+
+  function beginPull() {
+    pullingPanel = true
+    swipeKeys = []
+    swipeX = 0
+    swipeRevision += 1
+    missedSlide.stop()
+    startPanel()
+    missedFollowing = true
+  }
+  function followPull(x) {
+    missedShown = Math.max(0, Math.min(1, -x / pullSpan))
+  }
+  function endPull(g) {
+    pullingPanel = false
+    missedFollowing = false
+    var open = missedShown > 0.45 || ((g ? g.vx : 0) < -0.9 && missedShown > 0.08)
+    if (open) {
+      missedOpen = true
+      slideMissed(1, Math.max(120, 260 * (1 - missedShown)))
+      missedAway.restart()
+    } else {
+      slideMissed(0, Math.max(120, 220 * missedShown))
+    }
+  }
+
   function endGesture() {
     fingersUp.stop()
     var g = gesture
     gesture = null
+    if (pullingPanel) { endPull(g); return }
     if (!g || g.axis !== "x" || !swipeKeys.length) {
       if (swipeKeys.length && !swipeBusy) { swipeKeys = []; swipeX = 0; swipeRevision += 1 }
       return
@@ -1068,9 +1102,13 @@ Item {
 
     if (gesture.axis === "x") {
       if (before !== "x") {
-        swipeKeys = swipeTargets(under || hoverKey)
-        swipeRevision += 1
+        if (gesture.x < 0 && !missedVisible && (under || hoverKey)) beginPull()
+        else {
+          swipeKeys = swipeTargets(under || hoverKey)
+          swipeRevision += 1
+        }
       }
+      if (pullingPanel) { followPull(gesture.x); return true }
       swipeX = swipeKeys.length ? Gesture.drawn(gesture.x) : 0
       return true
     }
@@ -1107,6 +1145,9 @@ Item {
   property bool missedLoaded: false
   property bool missedPointerIn: false
   readonly property bool missedVisible: missedShown > 0.001 || missedOpen
+  // The panel proper: shown, and not merely its header peeking from the
+  // corner. The deck steps aside for this, not for a peek.
+  readonly property bool missedUp: missedVisible && !missedPeeking
   readonly property int missedLimit: 30
 
   Process {
@@ -1352,6 +1393,137 @@ Item {
     missedOpen = true
     slideMissed(1, 260)
     missedAway.restart()
+  }
+
+  // ------------------------------------------------------ the hot corner
+  //
+  // The pointer in the top-right corner brings the panel's heading out just
+  // far enough to be seen, nudging at the edge like something wanting to be
+  // pulled. Running the pointer down the right edge onto it brings the
+  // whole panel in - no click. The heading's sliver is `missedPeekPx`; the
+  // panel is placed by `missedShown` as always, so the reveal carries on
+  // from exactly where the peek left it.
+  property bool missedPeeking: false
+  property bool cornerIn: false          // for probe
+  property real missedPeekPx: 0
+  // Set by the surface: how far the panel travels, and how far of that is
+  // off the screen when it is fully out.
+  property real panelSpan: 1
+  property real panelAway: 1
+  function peekShown(px) { return Math.max(0, 1 - (panelSpan - px) / Math.max(1, panelAway)) }
+  onMissedPeekPxChanged: if (missedPeeking) missedShown = peekShown(missedPeekPx)
+
+  SequentialAnimation {
+    id: peekBounce
+    loops: Animation.Infinite
+    NumberAnimation { target: service; property: "missedPeekPx"; to: Style.space(26)
+                      duration: 320; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
+    PauseAnimation { duration: 650 }
+    NumberAnimation { target: service; property: "missedPeekPx"; to: Style.space(14)
+                      duration: 180; easing.type: Easing.InOutSine }
+  }
+  NumberAnimation {
+    id: peekAway
+    target: service; property: "missedPeekPx"; to: 0
+    duration: 180; easing.type: Easing.InCubic
+    onFinished: if (service.missedPeeking) {
+      service.missedPeeking = false
+      service.missedShown = 0
+    }
+  }
+  Timer {
+    id: peekGrace
+    // Leaving the corridor for a moment - a hand is not a ruler - is not
+    // leaving it.
+    interval: 220
+    onTriggered: service.endPeek()
+  }
+
+  function startPeek() {
+    if (missedVisible) return
+    peekAway.stop()
+    peekGrace.stop()
+    // From nothing, every time: left where the last reveal took it, the
+    // bounce's first step "out to 26" was no step at all, and the heading
+    // only appeared on the second bounce, a second late.
+    peekBounce.stop()
+    missedPeekPx = 0
+    missedPeeking = true
+    missedShown = peekShown(0)
+    peekBounce.restart()
+  }
+  function holdPeek() { peekGrace.stop() }
+  function leavePeek() { if (missedPeeking) peekGrace.restart() }
+  function endPeek() {
+    if (!missedPeeking) return
+    peekBounce.stop()
+    peekAway.restart()
+  }
+  // Down the edge and onto the heading: the whole panel, from where the
+  // sliver already is.
+  function revealFromPeek() {
+    if (!missedPeeking) return
+    peekBounce.stop()
+    peekAway.stop()
+    peekGrace.stop()
+    var from = missedShown
+    startPanel()
+    missedPeeking = false
+    missedShown = from
+    missedOpen = true
+    missedWasEntered = true
+    slideMissed(1, 280)
+    missedAway.restart()
+  }
+
+  // ------------------------------------------------------ dragging with a mouse
+  //
+  // The same carry as two fingers, for a mouse: press, drag sideways, let go.
+  // The fingers' rules decide what happens - a third of the way or a fling.
+  property string mouseSwipeKey: ""
+  function mouseSwipeBegin(key) {
+    if (swipeBusy || replyingKey !== "" || !key) return false
+    gesture = { axis: "x", dx: 0, dy: 0, x: 0, t: Date.now(), vx: 0, decided: false }
+    mouseSwipeKey = key
+    return true
+  }
+  function mouseSwipeMove(dx) {
+    if (!gesture) return
+    if (!gesture.decided && dx !== 0) {
+      gesture.decided = true
+      if (dx < 0 && !missedVisible) beginPull()
+      else {
+        swipeKeys = swipeTargets(mouseSwipeKey)
+        swipeRevision += 1
+      }
+    }
+    gesture.x = dx
+    if (pullingPanel) followPull(dx)
+    else swipeX = Gesture.drawn(dx)
+  }
+  function mouseSwipeEnd(pxPerSecond) {
+    if (!gesture) return
+    gesture.vx = pxPerSecond / 1000
+    endGesture()
+  }
+
+  function missedDragBegin(key) {
+    if (throwMissed.running || springMissed.running || missedSlide.running) return false
+    missedGesture = { axis: "x", dx: 0, dy: 0, x: 0, t: Date.now(), vx: 0 }
+    missedSwipeKey = key || ""
+    missedSwipeKeys = key ? missedTargets(key) : []
+    return true
+  }
+  function missedDragMove(dx) {
+    if (!missedGesture) return
+    missedGesture.x = dx
+    if (missedSwipeKey) missedSwipeX = Gesture.drawn(dx)
+    else missedShown = Math.max(0, Math.min(1, 1 - Math.max(0, dx) / notificationWidth))
+  }
+  function missedDragEnd(pxPerSecond) {
+    if (!missedGesture) return
+    missedGesture.vx = pxPerSecond / 1000
+    endMissedGesture()
   }
 
   // It goes away by itself when you are done with it: soon after the pointer
@@ -2763,6 +2935,7 @@ Item {
         scrollY: service.scrollY, scrollMax: service.scrollMax, deckRoom: service.deckRoom,
         layoutHeight: service.layout.height,
         edgeSwipe: service.edgeSwipe, edgeStatus: service.edgeStatus,
+        missedPeeking: service.missedPeeking, cornerIn: service.cornerIn, missedUp: service.missedUp,
         missedShown: service.missedShown, missedOpen: service.missedOpen,
         missedCount: service.missedCount, missedLoaded: service.missedLoaded,
         missedScroll: service.missedScroll, missedScrollMax: service.missedScrollMax,
@@ -3095,9 +3268,16 @@ Item {
       // the panel after it had arrived. The rectangle is spelled out here,
       // bound to the slide itself.
       mask: Region {
-        Region { item: surface.showingNotifications && !service.missedVisible ? deck : null }
+        Region { item: surface.showingNotifications && (!service.missedUp || service.pullingPanel) ? deck : null }
+        // The hot corner, and while the heading peeks, the corridor down the
+        // edge to it. Nothing else of the screen's edge is taken.
+        Region { item: surface.showingNotifications && !service.missedVisible ? cornerHot : null }
+        Region { item: surface.showingNotifications && service.missedPeeking ? peekCorridor : null }
         Region {
-          readonly property bool on: surface.showingNotifications && service.missedVisible
+          // Not while a card is still pulling it in: the panel slides in
+          // under the pointer, and taking the rest of that gesture away from
+          // the deck would stop it half way.
+          readonly property bool on: surface.showingNotifications && service.missedUp && !service.pullingPanel
           x: missedPanel.x + missedBody.x + (1 - service.missedShown) * missedPanel.away
           y: missedPanel.y + missedBody.y
           width: on ? missedBody.width : 0
@@ -3131,8 +3311,10 @@ Item {
         // same strip of screen, and the panel is what the fingers asked for.
         // The panel draws the live cards itself while it is up - they travel
         // into it - so the deck steps aside entirely rather than fading.
-        opacity: service.missedVisible ? 0 : 1
-        enabled: !service.missedVisible
+        opacity: service.missedUp ? 0 : 1
+        // ...but not its input while it is the thing pulling the panel in:
+        // switching the deck off mid-pull cut off the very gesture doing it.
+        enabled: !service.missedUp || service.pullingPanel
 
         Item {
           id: deck
@@ -3152,6 +3334,23 @@ Item {
           value: surface.height - service.barClearance - clipper.motionInset
                  - service.edgeSpacing
                  - (service.barPosition === "bottom" ? service.barThickness : 0)
+        }
+
+        // Dragging a card sideways with the mouse: the fingers' carry, for a
+        // hand on a mouse. It only takes over once the drag is clearly
+        // sideways, so a click still reaches the card and its buttons.
+        DragHandler {
+          id: deckDrag
+          target: null
+          acceptedButtons: Qt.LeftButton
+          yAxis.enabled: false
+          dragThreshold: Style.space(10)
+          property bool carrying: false
+          onActiveChanged: {
+            if (active) carrying = service.mouseSwipeBegin(service.hoverKey)
+            else if (carrying) { carrying = false; service.mouseSwipeEnd(centroid.velocity.x) }
+          }
+          onActiveTranslationChanged: if (active && carrying) service.mouseSwipeMove(activeTranslation.x)
         }
 
         // One hover region for the whole deck. Individual cards must not own
@@ -3392,7 +3591,7 @@ Item {
           // had lost its panel.
           BorderSurface {
             id: missedHeader
-            opacity: missedPanel.fadeIn
+            opacity: service.missedPeeking ? 1 : missedPanel.fadeIn
             width: parent.width
             height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
             radius: Style.cornerRadius
@@ -3470,6 +3669,9 @@ Item {
             x: -missedBody.x
             y: missedHeader.height + service.gap
             width: missedPanel.width
+            // A peek is the heading alone.
+            opacity: service.missedPeeking ? 0 : 1
+            Behavior on opacity { NumberAnimation { duration: 140 } }
             height: parent.height - y
             // Not while the panel is travelling: the live cards are being
             // drawn back where the deck had them, which is outside this
@@ -3628,6 +3830,27 @@ Item {
             font.pixelSize: Style.font.body * service.fontScale
           }
 
+          // Mouse drags on the panel: a card (or its stack) sideways, or the
+          // heading to push the whole panel away.
+          DragHandler {
+            target: null
+            acceptedButtons: Qt.LeftButton
+            yAxis.enabled: false
+            dragThreshold: Style.space(10)
+            enabled: service.missedUp
+            property bool carrying: false
+            onActiveChanged: {
+              if (active) {
+                var at = centroid.pressPosition
+                carrying = service.missedDragBegin(missedHover.keyAt(at.x, at.y))
+              } else if (carrying) {
+                carrying = false
+                service.missedDragEnd(centroid.velocity.x)
+              }
+            }
+            onActiveTranslationChanged: if (active && carrying) service.missedDragMove(activeTranslation.x)
+          }
+
           // The panel's own pointer region, above the cards for the same
           // reason as the deck's: a card that took hover would starve it.
           MouseArea {
@@ -3691,6 +3914,63 @@ Item {
               wheel.accepted = service.missedWheel(wheel, keyAt(wheel.x, wheel.y))
             }
           }
+        }
+      }
+
+      // What the peek needs to know to put the heading's sliver where it
+      // wants it: how far the panel travels, and how much of that is the
+      // screen's edge.
+      Binding {
+        target: service
+        property: "panelSpan"
+        when: surface.showingNotifications
+        value: clipper.width - clipper.deckX
+      }
+      Binding {
+        target: service
+        property: "panelAway"
+        when: surface.showingNotifications
+        value: missedPanel.away
+      }
+
+      // The hot corner: a few pixels where the screen's top and right edges
+      // meet. A pointer thrown at the corner stops exactly there, and nothing
+      // is ever clicked there by accident.
+      MouseArea {
+        id: cornerHot
+        x: surface.width - width
+        y: 0
+        width: Style.space(4)
+        height: Style.space(4)
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        enabled: !service.missedVisible
+        onContainsMouseChanged: {
+          service.cornerIn = containsMouse
+          if (containsMouse) service.startPeek()
+        }
+      }
+
+      // While the heading peeks: a strip down the right edge from the corner
+      // to the bottom of the heading. Some room to veer - a hand is not a
+      // ruler - but no wider than a thumb's width, so moving the pointer
+      // anywhere else takes the heading away rather than opening anything.
+      MouseArea {
+        id: peekCorridor
+        x: surface.width - width
+        y: 0
+        width: Style.space(48)
+        height: service.barClearance + missedHeader.height + Style.space(6)
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        enabled: service.missedPeeking
+        onContainsMouseChanged: {
+          if (containsMouse) service.holdPeek()
+          else service.leavePeek()
+        }
+        // Reaching the heading's height is reaching the heading.
+        onPositionChanged: function(mouse) {
+          if (mouse.y >= service.barClearance) service.revealFromPeek()
         }
       }
     }
