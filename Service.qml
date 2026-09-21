@@ -1135,19 +1135,57 @@ Item {
     }
   }
 
-  function loadMissed(entries) {
+  // The panel is everything: what is on screen now, then what you missed.
+  // The live cards go in the moment the fingers start, so they can travel
+  // across into the panel under the fingers rather than appearing after the
+  // store has answered.
+  function panelRow(source, live) {
+    var row = Store.normalise(source)
+    row.duration = 0                 // nothing in here times out
+    row.live = live
+    return row
+  }
+
+  function startPanel() {
     missed.clear()
+    for (var i = 0; i < toasts.count; i++) {
+      var live = toasts.get(i)
+      if (leaving[live.key]) continue
+      missed.append(panelRow(live, true))
+    }
+    missedCount = missed.count
+    missedLoaded = false
+    missedOpenDeck = ""
+    missedScroll = 0
+    missedRevision += 1
+    refreshMissed()
+  }
+
+  function loadMissed(entries) {
     for (var i = 0; i < entries.length; i++) {
       var row = Store.restored(entries[i])
-      if (!row) continue
-      row.duration = 0               // nothing in here times out
+      if (!row || missedIndex(row.key) >= 0) continue
+      row = panelRow(row, false)
       wantIcon(row)                  // the source's icon, as a live card gets it
       missed.append(row)
     }
     missedCount = missed.count
     missedLoaded = true
-    missedOpenDeck = ""
-    missedScroll = 0
+    missedRevision += 1
+  }
+
+  function joinMissed(row) {
+    if (!missedVisible || missedIndex(row.key) >= 0) return
+    missed.insert(0, panelRow(row, true))
+    missedCount = missed.count
+    missedRevision += 1
+  }
+
+  function leaveMissed(key) {
+    var at = missedIndex(key)
+    if (at < 0 || !missed.get(at).live) return
+    missed.remove(at)
+    missedCount = missed.count
     missedRevision += 1
   }
 
@@ -1175,7 +1213,7 @@ Item {
     if (missedOpen && missedShown >= 0.999) return
     missedFollowing = true
     missedSlide.stop()
-    if (!missedOpen) { missedLoaded = false; refreshMissed() }
+    if (!missedOpen) startPanel()
   }
 
   function followMissed(progress) {
@@ -1207,8 +1245,7 @@ Item {
   }
 
   function openMissed() {
-    missedLoaded = false
-    refreshMissed()
+    startPanel()
     missedOpen = true
     slideMissed(1, 260)
     missedAway.restart()
@@ -1254,11 +1291,15 @@ Item {
       heightOf: function(key) { return service.missedHeights[key] || Style.space(58) }
     })
   }
+  // Batched to the end of the event: cards measure themselves while the
+  // layout that places them is being built, and bumping the revision from
+  // inside that is a loop. One relayout per burst of measurements.
   function noteMissedHeight(key, h) {
     if (Math.abs((missedHeights[key] || 0) - h) < 0.5) return
     missedHeights[key] = h
-    missedRevision += 1
+    Qt.callLater(bumpMissed)
   }
+  function bumpMissed() { missedRevision += 1 }
   function openMissedDeck(deckKey) {
     missedCollapse.stop()
     if (missedOpenDeck !== deckKey) missedOpenDeck = deckKey
@@ -1275,14 +1316,19 @@ Item {
     return -1
   }
 
-  // Dealt with: it will not come back on the next swipe.
+  // Dealt with: it will not come back on the next swipe. A live card is
+  // dismissed as a live card - closing it takes it out of the panel too.
   function seeMissed(keys) {
     if (!keys.length) return
-    Store.write(storeProc, storeBin, "seen", null, keys)
+    var stored = []
     for (var i = 0; i < keys.length; i++) {
       var at = missedIndex(keys[i])
-      if (at >= 0) missed.remove(at)
+      if (at < 0) continue
+      if (missed.get(at).live) { closeToast(keys[i], "dismissed"); continue }
+      stored.push(keys[i])
+      missed.remove(at)
     }
+    if (stored.length) Store.write(storeProc, storeBin, "seen", null, stored)
     missedCount = missed.count
     missedRevision += 1
     if (!missed.count && missedOpen) closeMissed()
@@ -1318,6 +1364,7 @@ Item {
     var at = missedIndex(key)
     if (at < 0) return
     var row = missed.get(at)
+    if (row.live) { closeMissed(); activate(key); return }
     var copy = { senderPid: row.senderPid, source: row.source, link: row.link }
     seeMissed([key])
     closeMissed()
@@ -1815,6 +1862,7 @@ Item {
       } else {
         service.pinDeckDisplay()
         toasts.insert(0, row)
+        service.joinMissed(row)
         // Where it comes from: under the bar, transparent. The layout has
         // already made room for it, so this is the only thing the arrival
         // needs - the drop is the same move everything else is making.
@@ -1876,6 +1924,7 @@ Item {
 
   function finishClose(key, reason) {
     if (replyingKey === key) replyingKey = ""
+    leaveMissed(key)
     if (thrown[key]) {
       var still = {}
       for (var t in thrown) if (t !== key) still[t] = true
@@ -2885,7 +2934,9 @@ Item {
         clip: true
         // Out of the way while the missed panel is in: the two occupy the
         // same strip of screen, and the panel is what the fingers asked for.
-        opacity: 1 - service.missedShown
+        // The panel draws the live cards itself while it is up - they travel
+        // into it - so the deck steps aside entirely rather than fading.
+        opacity: service.missedVisible ? 0 : 1
         enabled: !service.missedVisible
 
         Item {
@@ -3078,7 +3129,7 @@ Item {
             sole: toasts.count === 1
             // Nothing counts down while the deck is open, mid-throw, or with
             // an answer half typed into it.
-            paused: service.expanded || service.replyingKey !== ""
+            paused: service.expanded || service.replyingKey !== "" || service.missedVisible
 
             // The target height, not the drawn one: a step function of the
             // card's state, so the layout moves on events rather than frames.
@@ -3122,7 +3173,10 @@ Item {
         width: clipper.width
         readonly property real away: width + Style.space(24)
         transform: Translate { x: (1 - service.missedShown) * missedPanel.away }
-        opacity: Math.min(1, service.missedShown * 1.5)
+        // How far the panel is in, eased for fading: what is new to the
+        // screen fades in with it; the live cards are already there and only
+        // move.
+        readonly property real fadeIn: Math.min(1, service.missedShown * 1.5)
 
         Item {
           id: missedBody
@@ -3139,6 +3193,7 @@ Item {
           // had lost its panel.
           BorderSurface {
             id: missedHeader
+            opacity: missedPanel.fadeIn
             width: parent.width
             height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
             radius: Style.cornerRadius
@@ -3212,7 +3267,12 @@ Item {
             y: missedHeader.height + service.gap
             width: parent.width
             height: parent.height - y
-            clip: true
+            // Not while the panel is travelling: the live cards are being
+            // drawn back where the deck had them, which is outside this
+            // viewport until the panel arrives, and clipping cut them in
+            // half on the way. The list is at its top then, so nothing
+            // needs hiding.
+            clip: service.missedShown >= 0.999
 
             Binding {
               target: service
@@ -3240,16 +3300,35 @@ Item {
                   width: missedList.width
                   height: missedCard.height
                   y: place.y
-                  z: place.z
-                  scale: place.scale
-                  opacity: place.opacity
+                  z: place.z + (live ? 1000 : 0)
                   transformOrigin: Item.Top
                   enabled: !place.hidden
-                  // Plain Behaviors are enough here: nothing in this list
-                  // feeds a moving height back into its own layout.
-                  Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                  Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                  Behavior on opacity { NumberAnimation { duration: 180 } }
+
+                  // A card that is on screen now starts where the deck has
+                  // it and travels to its place in the panel as the panel
+                  // comes in - the same fraction, so under the fingers it
+                  // moves with them. `away` is how far it still has to go.
+                  readonly property bool live: model.live === true
+                  readonly property var deckPlace: live ? service.placements[key] : null
+                  readonly property real away: live && deckPlace ? 1 - service.missedShown : 0
+                  readonly property real deckY: deckPlace ? deckPlace.y - service.scrollY : 0
+                  readonly property real panelY: missedViewport.y + y - service.missedScroll
+                  scale: place.scale + ((deckPlace ? deckPlace.scale : place.scale) - place.scale) * away
+                  opacity: live ? place.opacity + ((deckPlace ? deckPlace.opacity : 0) - place.opacity) * away
+                                : place.opacity * missedPanel.fadeIn
+                  transform: Translate {
+                    x: -missedSlot.away * missedPanel.away
+                    y: missedSlot.away * (missedSlot.deckY - missedSlot.panelY)
+                  }
+
+                  // Plain Behaviors are enough for the list's own moves:
+                  // nothing in it feeds a moving height back into its layout.
+                  // Off while the panel is travelling, or they would trail
+                  // the fingers.
+                  readonly property bool settled: service.missedShown >= 0.999
+                  Behavior on y { enabled: missedSlot.settled; NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                  Behavior on scale { enabled: missedSlot.settled; NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                  Behavior on opacity { enabled: missedSlot.settled; NumberAnimation { duration: 180 } }
 
                   Toast {
                     id: missedCard
@@ -3351,7 +3430,7 @@ Item {
               }
               return found
             }
-            function track(x, y) {
+            function track(x, y, moved) {
               var ly = y - missedViewport.y + service.missedScroll
               service.missedHoverX = x
               service.missedHoverY = ly
@@ -3359,7 +3438,11 @@ Item {
               // Resting on a stack's front card opens that stack, as in the
               // deck. Only the front card: the ones an open stack spread out
               // below it must not open whichever stack they now overlap.
-              if (y < missedViewport.y) return
+              // And only when the pointer moved there. Scrolling slides the
+              // list under a pointer that has not moved, and letting that
+              // switch stacks shut the one being scrolled through - the list
+              // shrank to a fraction of its height and jumped back to the top.
+              if (!moved || y < missedViewport.y) return
               var decks = service.missedLayout.decks
               for (var i = 0; i < decks.length; i++) {
                 var first = decks[i].rows[0]
@@ -3377,9 +3460,9 @@ Item {
               service.missedPointerIn = containsMouse
               if (!containsMouse) service.missedHoverKey = ""
             }
-            onPositionChanged: function(mouse) { track(mouse.x, mouse.y) }
+            onPositionChanged: function(mouse) { track(mouse.x, mouse.y, true) }
             onWheel: function(wheel) {
-              track(wheel.x, wheel.y)
+              track(wheel.x, wheel.y, false)
               wheel.accepted = service.missedWheel(wheel, keyAt(wheel.x, wheel.y))
             }
           }
