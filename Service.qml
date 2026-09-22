@@ -1132,7 +1132,9 @@ Item {
   // Only the device knows where on the pad fingers started, so a small
   // helper reads it (bin/omapager-edge, sandboxed to that one device node)
   // and streams begin / move / end. Reading the touchpad needs a one-time
-  // udev rule, install-touchpad-access.sh; without it this is simply off.
+  // udev rule the user adds by hand (README, install step 3) - never a script
+  // from this directory, which the user can write to and so must not run as
+  // root. Without it this is simply off.
   property bool edgeSwipe: true
   property string edgeStatus: "off"     // off | starting | ready | no-access | no-touchpad | unavailable
   readonly property string edgeBin: Qt.resolvedUrl("bin/omapager-run-edge").toString().replace(/^file:\/\//, "")

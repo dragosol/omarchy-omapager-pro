@@ -721,7 +721,7 @@ BarWidget {
                 text: {
                   var st = pager.service ? pager.service.edgeStatus : "off"
                   if (st === "no-access")
-                    return "Needs touchpad access, once: sudo ./install-touchpad-access.sh in the plugin folder, then restart the shell."
+                    return "Needs touchpad access: add the one-line udev rule from the README's install step 3, then restart the shell."
                   if (st === "no-touchpad") return "No touchpad found."
                   if (st === "unavailable") return "The touchpad reader could not start."
                   return "Two fingers sliding onto the touchpad over its right edge pull in what you missed."

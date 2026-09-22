@@ -146,20 +146,33 @@ history, snoozes and icons.
 ### 3. Optional: the edge swipe
 
 Pulling the panel in from the touchpad's edge reads finger positions from the
-touchpad itself, which needs read access to it. One command, once:
+touchpad itself, which needs read access to it. That takes one udev rule,
+added once by hand - the whole rule is the one line below, so you can read
+exactly what is being given, and nothing from the plugin folder runs as root:
 
 ```bash
-sudo ~/.config/omarchy/plugins/io.github.dragosol.omapager-pro/install-touchpad-access.sh
+echo 'SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", TAG+="uaccess"' \
+  | sudo tee /etc/udev/rules.d/70-omapager-touchpad.rules
+sudo udevadm control --reload
+sudo udevadm trigger --subsystem-match=input --action=change
 omarchy restart shell
 ```
 
-It installs a single udev rule, `/etc/udev/rules.d/70-omapager-touchpad.rules`,
-that gives the logged-in user access to devices udev has classified as
+The rule gives the logged-in user access to devices udev has classified as
 touchpads - not the keyboard, not other input - through the standard
-systemd-logind `uaccess` handoff. The reader runs in the same Bubblewrap sandbox
-as the other helpers, with that one device node and nothing else. `--remove`
-takes the rule away. Everything else works without it, including the hot
-corner, left pulls and the `missed` command.
+systemd-logind `uaccess` handoff, so access follows whoever is at the seat and
+ends when they log out. The reader runs in the same Bubblewrap sandbox as the
+other helpers, with that one device node and nothing else. Everything else
+works without it, including the hot corner, left pulls and the `missed`
+command.
+
+To take the rule away again:
+
+```bash
+sudo rm /etc/udev/rules.d/70-omapager-touchpad.rules
+sudo udevadm control --reload
+sudo udevadm trigger --subsystem-match=input --action=change
+```
 
 ### Updates
 
@@ -177,8 +190,10 @@ omarchy plugin disable io.github.dragosol.omapager-pro
 omarchy plugin remove io.github.dragosol.omapager-pro
 omarchy plugin enable omarchy.notifications
 omarchy restart shell
-sudo /path/to/install-touchpad-access.sh --remove   # only if you installed the rule
 ```
+
+If you added the touchpad rule, remove it as in
+[step 3](#3-optional-the-edge-swipe).
 
 Removal keeps notification history, icon cache and other state in
 `~/.local/state/omarchy/omapager/`. Delete that directory separately if you also
@@ -205,7 +220,7 @@ below apply to new configurations, not choices you have already saved.
 | `displayName` | empty | Output for specific mode, such as `DP-1`. Omapager keeps the selection while disconnected and falls back to a connected display. |
 | `edgeSpacing` | `12` | Gap from the bar and screen edges, in logical pixels from 0 to 64. Config-only. |
 | `showCountdown` | `false` | Show the time-remaining animation. Turning it off does not change expiry. |
-| `edgeSwipe` | `true` | Pull the Notifications panel in with two fingers from the touchpad's right edge. Needs the one-time touchpad rule; see [install step 3](#3-optional-the-edge-swipe). |
+| `edgeSwipe` | `true` | Pull the Notifications panel in with two fingers from the touchpad's right edge. Needs the one-time touchpad rule from [install step 3](#3-optional-the-edge-swipe). |
 | `offerSnoozeWhenSharing` | `true` | Suggest a timed snooze when portal sharing starts. Never mute automatically. |
 | `fontScale` | `100` | Notification text size as a percentage, from 75 to 200. Does not resize bar or panel text. |
 | `actionsAlign` | `right` | Align action buttons to the `right` or `left`. |
