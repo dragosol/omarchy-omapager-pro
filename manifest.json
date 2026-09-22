@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.dragosol.omapager-pro",
   "name": "Omapager Pro",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": "Dragos Robu (fork of Omapager by Neil Jagdish Patel)",
   "license": "MIT",
-  "description": "Notifications for Omarchy, with touchpad gestures: two-finger swipe a card away, or swipe the top card of a group to clear the whole group. A fork of Omapager - stacking, grouping, inline reply, per-source snooze - with decks that scroll instead of running off the screen.",
+  "description": "Revamped, full-featured notifications for Omarchy. Swipe a notification away with two fingers or the mouse, pull in everything you missed from the touchpad's edge or the top-right corner, and browse stacks that open as you point at them, in a minimalist design that matches your window borders.",
   "kinds": [
     "service",
     "bar-widget"
