@@ -106,14 +106,6 @@ step 1, then enable Omapager in step 2.
 
 #### Via the marketplace
 
-<!-- marketplace-pending -->
-> [!CAUTION]
-> **Not live yet.** Omapager Pro is submitted to the Omarchy Plugin Marketplace
-> and waiting for approval, so it won't show up there yet. Install it
-> [via Git](#via-git) in the meantime - the command below works as soon as it is
-> listed.
-<!-- /marketplace-pending -->
-
 Find Omapager Pro in the [Omarchy Plugin Marketplace](https://omarchyplugins.com/)
 and run its install command:
 
