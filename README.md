@@ -6,7 +6,7 @@ from the edge of the touchpad, and browse it all in a Notifications panel of
 stacks that open as you point at them. Replaces the built-in notification
 service and follows your Omarchy theme, down to the window border.
 
-<img src="preview.png" width="640" alt="The Notifications panel with stacks from Slack, X, WhatsApp and Google Calendar">
+<img src="docs/window.png" width="640" alt="The Notifications panel with stacks from Slack, X, WhatsApp and Google Calendar">
 
 Omapager Pro started as a fork of Neil Jagdish Patel's
 [Omapager](https://github.com/njpatel/omapager) and keeps everything it does -
