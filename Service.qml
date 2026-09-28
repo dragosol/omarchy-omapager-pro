@@ -1413,9 +1413,17 @@ Item {
   property real missedPeekPx: 0
   // Set by the surface: how far the panel travels, and how far of that is
   // off the screen when it is fully out.
-  property real panelSpan: 1
-  property real panelAway: 1
-  function peekShown(px) { return Math.max(0, 1 - (panelSpan - px) / Math.max(1, panelAway)) }
+  // Derived here, from the same numbers the surface lays itself out with,
+  // not reported back by it: the reports came from a Binding on the showing
+  // surface, and after a display change rebuilt the surface they stopped
+  // arriving - the service fell back to 1 for both, the peek put the panel
+  // twenty-odd widths to the left, and the reveal slid in from the wrong side.
+  // Keep in step with `clipper` (motionInset + swipeRoom + edgeGap) and
+  // `missedPanel.away` (+ 24) in the surface below.
+  readonly property real panelSpan: notificationWidth + edgeClearance
+  readonly property real panelAway: notificationWidth + Style.spacing.sm + Style.space(44)
+                                    + edgeClearance + Style.space(24)
+  function peekShown(px) { return Math.max(0, Math.min(1, 1 - (panelSpan - px) / Math.max(1, panelAway))) }
   onMissedPeekPxChanged: if (missedPeeking) missedShown = peekShown(missedPeekPx)
 
   SequentialAnimation {
@@ -3336,6 +3344,13 @@ Item {
           target: service
           property: "deckRoom"
           when: surface.showingNotifications && surface.height > 0
+          // One surface per screen, and the one reporting can go away - a
+          // second monitor unplugged, or the notifications moving screens.
+          // Qt's default then restores whatever the value was before this
+          // surface ever reported, which is how the peek geometry once fell
+          // back to 1. Keep the last good value; the next showing surface
+          // replaces it.
+          restoreMode: Binding.RestoreNone
           value: surface.height - service.barClearance - clipper.motionInset
                  - service.edgeSpacing
                  - (service.barPosition === "bottom" ? service.barThickness : 0)
@@ -3689,6 +3704,7 @@ Item {
               target: service
               property: "missedScrollMax"
               when: surface.showingNotifications
+              restoreMode: Binding.RestoreNone     // as deckRoom, above
               value: Math.max(0, service.missedLayout.height + service.edgeSpacing - missedViewport.height)
             }
 
@@ -3922,21 +3938,6 @@ Item {
         }
       }
 
-      // What the peek needs to know to put the heading's sliver where it
-      // wants it: how far the panel travels, and how much of that is the
-      // screen's edge.
-      Binding {
-        target: service
-        property: "panelSpan"
-        when: surface.showingNotifications
-        value: clipper.width - clipper.deckX
-      }
-      Binding {
-        target: service
-        property: "panelAway"
-        when: surface.showingNotifications
-        value: missedPanel.away
-      }
 
       // The hot corner: a few pixels where the screen's top and right edges
       // meet. A pointer thrown at the corner stops exactly there, and nothing
