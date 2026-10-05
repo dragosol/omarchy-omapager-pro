@@ -195,8 +195,9 @@ want to remove the stored data. A per-source icon you dropped into
 ## Settings
 
 Right-click the bar indicator to open its panel, then click the settings cog
-to choose a notification display, toggle countdown animation or control
-screen-sharing snooze suggestions.
+to choose a notification display, choose when to step aside for fullscreen
+windows, toggle countdown animation or control screen-sharing snooze
+suggestions.
 
 Changes save to the `io.github.dragosol.omapager-pro` bar-widget entry in
 `~/.config/omarchy/shell.json`. You can edit the other options there too.
@@ -210,6 +211,7 @@ below apply to new configurations, not choices you have already saved.
 | `stacking` | `source` | `source` gives each sender a deck. `all` uses one deck. |
 | `displayMode` | `active` | `active` follows focus for new decks. `specific` uses `displayName`. `all` mirrors notifications. Visible decks stay put in active mode. |
 | `displayName` | empty | Output for specific mode, such as `DP-1`. Omapager keeps the selection while disconnected and falls back to a connected display. |
+| `fullscreenOverlay` | `off` | Step aside for fullscreen windows so the compositor can scan them out directly. `all` steps aside for any fullscreen window, `steam` only for Steam games (`steam_app_*`); both come back to show a notification. `all-away` and `steam-away` never cover the fullscreen display and send notifications to another display, or to history when there is none. |
 | `edgeSpacing` | `12` | Gap from the bar and screen edges, in logical pixels from 0 to 64. Config-only. |
 | `showCountdown` | `false` | Show the time-remaining animation. Turning it off does not change expiry. |
 | `edgeSwipe` | `true` | Pull the Notifications panel in with two fingers from the touchpad's right edge. Needs the one-time touchpad rule from [install step 3](#3-optional-the-edge-swipe). |
@@ -311,12 +313,19 @@ Omarchy's existing comma-key shortcuts work without configuration:
 | | |
 | --- | --- |
 | `SUPER` `,` | dismiss the newest notification |
-| `SUPER` `SHIFT` `,` | dismiss all of them |
+| `SUPER` `SHIFT` `,` | dismiss the whole stack the newest one is in (or the one you have open) |
 | `SUPER` `CTRL` `,` | toggle silencing |
 | `SUPER` `ALT` `,` | invoke the newest one, as clicking it would |
 | `SUPER` `SHIFT` `ALT` `,` | put the last few back on screen |
 
-Omarchy screenshot toasts carry `omarchy-exec-argv`. Click and Super+Alt+, run that editor.
+Omarchy screenshot toasts carry `omarchy-exec-argv`. Click and Super+Alt+, run that
+editor. The same gestures open a Taildrop notification's local file or launch
+Omarchy's configured agent to diagnose a crash by PID. Crash details are retrieved
+by the agent, not taken from notification-supplied metadata. Taildrop opening
+requires an existing non-executable regular file at an absolute path; URLs,
+traversal, final symlinks and `.desktop` launchers are refused. These actions are
+checked again when activated and are never restored from history. They do not
+require `allowDefaultActionOnCardClick`.
 
 ### Optional bindings
 

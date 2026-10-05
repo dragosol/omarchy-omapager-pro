@@ -46,6 +46,11 @@ omarchy-shell omapager probe   # what the daemon believes, as JSON
 bin/omapager-demo --list       # scenes; --scene routing prints its predictions first
 ```
 
+`probe.notificationDisplays` lists the connected displays eligible to show
+notifications after fullscreen routing. It is empty when every display is
+avoided, including in mirror mode. `surfaces` separately reports whether each
+overlay is currently mapped; an eligible display can be unmapped while idle.
+
 **Hot reload does not recreate `Variants` windows.** Edit `Toast.qml`, the
 surface, or `Widget.qml` and you must restart the shell — otherwise you are
 looking at the old surface and will chase a bug that is not there. Touching any
@@ -87,6 +92,24 @@ should print `default`, confirming that ordinary activation still works.
 The deck owns hover, not the cards. Refresh its hit test after scene settlement
 has removed departing rows: pointer events alone miss cards moving beneath a
 stationary pointer and leave the next close control disabled.
+
+### Stack dismissal regression
+
+Send three critical notifications and call `notifications dismissOne` three
+times within the 320ms exit animation (`SUPER + ,` uses this method). Each
+call must dismiss the next non-departing card; after the scene settles, no
+cards should remain. An extra call while every row is departing must return
+`none`, just as it does for an empty model. Repeat with separate sources and
+with `stacking = all`. `node tests/security.cjs` covers rapid dismissal,
+skipping a card already expiring, and closing each sender exactly once.
+
+In an isolated lab, send critical notifications from two sources. Check
+`notifications dismissAll` clears the open stack, or the newest visible stack
+when none is open. Switch between `source` and `all` with a stack open and
+repeat; an old open-stack key must not prevent dismissal. Press again during
+the exit animation: departing cards must not consume the next dismissal.
+`omapager clear` must still clear every stack. `node tests/security.cjs` covers
+deck selection, stale open keys, animation overlap and the empty state.
 
 ## Things that cost a day to learn
 
@@ -200,22 +223,39 @@ at 60 days by `tidy`, which the daemon runs at startup.
 ## Security boundaries in this branch
 
 Read SECURITY.md and docs/SECURITY_ARCHITECTURE.md before editing capability
-paths. Security.js is the only URL-opening broker. Never add direct desktop
-opens elsewhere, raw helper launches, command shells, or automatic URL/action
-side effects. Notification labels are plain text; only sanitized body markup is
+paths. Security.js is the external-URL broker; `bin/omapager-action` separately
+brokers the two first-party local-file/crash actions. Never add direct desktop
+opens elsewhere, command shells, or automatic URL/action side effects.
+Notification labels are plain text; only sanitized body markup is
 RichText. Store.sanitiseForPersistence and the Python store independently redact
 code-bearing notifications. Do not remove either boundary.
 
-Omarchy screenshot toasts carry `omarchy-exec-argv`. Click and the stock
-`notifications invokeLast` binding (Super+Alt+,) run it through
-`Security.parseOmarchyExecArgv` then `Quickshell.execDetached`. App names
-are claims, so only tensaku-edit, tensaku, satty, swappy, omasnap and Omarchy's own
-omarchy-* commands may
-run, as a bare name or under /usr/bin and /usr/local/bin. Re-parse on
-activate. History never keeps the argv: `Store.sanitiseForPersistence`
-clears it and the Python store's field allowlist omits it.
-`node tests/security.cjs` covers the parser; the Python store test covers
-the persistence drop.
+Omarchy `omarchy-action` toasts carry `omarchy-exec-argv`. Click and the stock
+`notifications invokeLast` binding (Super+Alt+,) re-parse it through
+`Security.parseOmarchyExecArgv`. Screenshot editors (tensaku-edit, tensaku,
+satty, swappy, omasnap) retain their bare-name, /usr/bin and /usr/local/bin policy.
+Two additional actions accept only a bare name or /usr/bin spelling:
+
+- `xdg-open` accepts one absolute local file path, not a URL, option or traversal.
+  At activation `bin/omapager-action` requires an existing non-executable regular
+  file, rejects a final symlink and `.desktop` launcher, then calls the fixed
+  `/usr/bin/xdg-open` with an encoded file URI. Spaces, Unicode and URI punctuation
+  in filenames are preserved. The desktop app reopens the path, so this does not
+  prevent another same-user process racing a replacement after the check.
+- `omarchy-agent-crash` accepts a positive PID up to 2147483647. The stock command's
+  optional metadata is discarded before storing the action; it is not copied
+  into an agent prompt. The broker launches `$OMARCHY_PATH/bin/omarchy-agent-crash`
+  (default `/usr/share/omarchy`) with only the PID. The agent retrieves crash
+  details using that PID; a configured Omarchy agent is still required.
+
+App names remain unauthenticated claims. These are explicit click capabilities,
+not proof that a notification really came from Taildrop or crash-watch. They run
+on the desktop, outside the background-helper Bubblewrap profiles. History never
+keeps argv: `Store.sanitiseForPersistence` clears it and the Python store's field
+allowlist omits it. `node tests/security.cjs` covers admission and metadata
+removal; `python3 -B -m unittest discover -s tests -p test_actions.py -v` covers
+activation-time file and PID checks. Verify both card clicks and invokeLast in
+an isolated lab; malformed hints must not launch either action.
 
 The panel's Recent stack is session-only, not another persistence path.
 `Service.rememberRecent()` keeps at most 20 bounded text snapshots after

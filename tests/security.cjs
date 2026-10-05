@@ -91,6 +91,7 @@ function extract(src, startMarker, endMarker) {
 }
 const capacitySource = [
   extract(source, 'function pinDeckDisplay()', '\n  // A verification code'),
+  extract(source, 'function fullscreenOn(name)', '\n  Connections {'),
   extract(source, 'function rememberRecent(row)', '// ------------------------------------------------------- what was held'),
   extract(source, 'function durationFor(urgency, requested)', '// ------------------------------------------------------------- snooze'),
   extract(source, 'function liveCount()', '// ------------------------------------------------------------- icons'),
@@ -123,6 +124,9 @@ function newCapacityScope() {
     recentRows: [], recentLimit: 20,
     senderImageQueue: [], senderImageRevision: 0, helperSettingsReady: false,
     configuredDisplayName: 'fixture-display', deckDisplayName: '',
+    fullscreenAway: false, fullscreenScope: '', hyprRevision: 0,
+    displayNames: ['fixture-display'], focusedDisplayName: 'fixture-display',
+    Quickshell: { screens: [] }, Hyprland: { monitorFor: screen => screen.monitor },
     snoozeRevision: 0, snoozes: {},
     codesBypassQuiet: false, hideSettingsAction: false,
     lowDuration: 5000, normalDuration: 8000, maxDuration: 30000,
@@ -178,6 +182,89 @@ function newCapacityScope() {
     return n;
   };
   return s;
+}
+
+{ // Route away from fullscreen outputs, but not merely maximised windows.
+  const s = newCapacityScope();
+  const game = { lastIpcObject: { fullscreen: 1, class: 'steam_app_31' } };
+  const work = { lastIpcObject: { fullscreen: 0, class: 'editor' } };
+  s.displayNames = ['game', 'work'];
+  s.focusedDisplayName = 'game';
+  s.Quickshell.screens = [game, work].map((window, i) => ({
+    name: s.displayNames[i],
+    monitor: { activeWorkspace: { hasFullscreen: true, toplevels: { values: [window] } } },
+  }));
+  s.fullscreenAway = true;
+  s.fullscreenScope = 'all';
+  assert.equal(s.routeAround('game'), 'game');
+  game.lastIpcObject.fullscreen = 2;
+  assert.equal(s.routeAround('game'), 'work');
+  work.lastIpcObject.fullscreen = 2;
+  assert.equal(s.routeAround('game'), '');
+  s.fullscreenScope = 'steam';
+  assert.equal(s.routeAround('game'), 'work');
+  s.fullscreenAway = false;
+  assert.equal(s.routeAround('game'), 'game');
+}
+
+{ // Rapid single dismissals must skip rows still playing their exit animation.
+  const s = newCapacityScope();
+  vm.runInContext(extract(source, 'function dismissOne(): string', 'function invokeLast()')
+    .replace('(): string', '()'), s);
+  assert.equal(s.dismissOne(), 'none');
+  const senders = [1, 2, 3, 4].map(id => s.fakeNotification(id));
+  for (const sender of senders) s.handleNotification(sender);
+  s.drainCallLater();
+  const keys = s.toasts.rows.map(row => row.key);
+  s.closeToast(keys[0], 'expired');
+  for (const key of keys.slice(1)) {
+    assert.equal(s.dismissOne(), 'ok');
+    assert.equal(s.leaving[key], 'dismissed', 'each press selects the next live card');
+  }
+  assert.equal(s.dismissOne(), 'none', 'departing cards are not dismissible');
+  assert.equal(s.toasts.count, 4, 'exit animations retain their model rows');
+  assert.equal(s.leaving[keys[0]], 'expired', 'dismissal preserves an earlier expiry');
+  for (const key of keys) s.finishClose(key, s.leaving[key]);
+  assert.equal(s.toasts.count, 0);
+  assert.equal(senders[3].expiries, 1);
+  for (const sender of senders.slice(0, 3)) assert.equal(sender.dismissals, 1);
+  for (const sender of senders) assert.equal(sender.closeAttempts, 1);
+}
+
+{ // Dismiss the visible deck, including across mode changes and exit animations.
+  const Layout = load('Layout');
+  function fixture(stacking, expanded, openDeck) {
+    const s = newCapacityScope();
+    Object.assign(s, { Layout, stacking, expanded, openDeck });
+    for (const [key, groupKey] of [['old', 'chat'], ['build', 'build'], ['new', 'chat']]) {
+      s.reserveLive(key);
+      s.toasts.insert(0, { key, groupKey });
+    }
+    Object.defineProperty(s, 'layout', { get: () => Layout.compute(
+      s.toasts.rows.filter(row => !s.leaving[row.key]),
+      { stacking: s.stacking, expanded: s.expanded, openDeck: s.openDeck }) });
+    return s;
+  }
+  const collapsed = fixture('source', false, '');
+  assert.equal(collapsed.clearDeck('dismissed'), 2);
+  assert.deepEqual(Object.keys(collapsed.leaving).sort(), ['new', 'old']);
+  // Departing rows remain in the model, but must not consume the next press.
+  assert.equal(collapsed.clearDeck('dismissed'), 1);
+  assert.deepEqual(Object.keys(collapsed.leaving).sort(), ['build', 'new', 'old']);
+  assert.equal(collapsed.clearDeck('dismissed'), 0);
+  const open = fixture('source', true, 'build');
+  assert.equal(open.clearDeck('dismissed'), 1);
+  assert.deepEqual(Object.keys(open.leaving), ['build']);
+  assert.equal(open.clearDeck('dismissed'), 2);
+  const all = fixture('all', true, 'chat');
+  assert.equal(all.clearDeck('dismissed'), 3);
+  assert.deepEqual(Object.keys(all.leaving).sort(), ['build', 'new', 'old']);
+  const source = fixture('source', true, 'all');
+  assert.equal(source.clearDeck('dismissed'), 2);
+  assert.deepEqual(Object.keys(source.leaving).sort(), ['new', 'old']);
+  const empty = fixture('source', false, '');
+  empty.toasts.rows = [];
+  assert.equal(empty.clearDeck('dismissed'), 0);
 }
 
 { // A late decode cannot overwrite a replacement, even if it reuses the path.
@@ -682,16 +769,38 @@ for (const u of ['https://example.com/', 'https://sub.example.co.uk/', 'https://
   assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['/tmp/../etc/passwd'])), null);
   assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['-foo'])), null);
   assert.equal(S.parseOmarchyExecArgv(''), null);
-  // Omarchy's own clickable toasts (omarchy-notification-send --exec).
-  const crash = JSON.stringify(['omarchy-agent-crash', '4242', 'gnome-keyring-d', '/usr/bin/gnome-keyring-daemon', 'SEGV']);
-  assert.equal(JSON.stringify(S.parseOmarchyExecArgv(crash)), crash);
-  assert.ok(S.parseOmarchyExecArgv(JSON.stringify(['/usr/share/omarchy/bin/omarchy-agent-crash', '1'])));
-  assert.ok(S.parseOmarchyExecArgv(JSON.stringify(['/usr/bin/omarchy-agent-crash', '1'])));
-  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['/tmp/omarchy-agent-crash'])), null);
-  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['/home/u/.local/bin/omarchy-x'])), null);
-  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['/usr/share/omarchy/bin/tensaku'])), null);
-  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['omarchy-'])), null);
-  assert.equal(S.parseOmarchyExecArgv(JSON.stringify(['omarchy-X;id'])), null);
+  for (const argv of [
+    ['xdg-open', '/home/user/Downloads/a file #1%.txt'],
+    ['omarchy-agent-crash', '12345', 'untrusted\nagent instructions', '/tmp/anything', 'SIGSEGV'],
+    ['/usr/bin/omarchy-agent-crash', '2147483647'],
+  ]) {
+    const expected = [argv[0].split('/').pop(), argv[1]];
+    const parsed = S.parseOmarchyExecArgv(JSON.stringify(argv));
+    assert.equal(JSON.stringify(parsed), JSON.stringify(expected));
+    assert.equal(JSON.stringify(S.parseOmarchyExecArgv(parsed)), JSON.stringify(expected));
+    const row = Store.snapshot({appName: 'omarchy-action', summary: 'Action',
+      hints: {'omarchy-exec-argv': JSON.stringify(argv)}}, 'action', {Normal: 1});
+    assert.equal(row.execArgv, JSON.stringify(expected));
+    assert.equal(Store.sanitiseForPersistence(row).execArgv, '');
+    const other = Store.snapshot({appName: 'Other', summary: 'Action',
+      hints: {'omarchy-exec-argv': JSON.stringify(argv)}}, 'other', {Normal: 1});
+    assert.equal(other.execArgv, '');
+  }
+  for (const argv of [
+    ['xdg-open'], ['xdg-open', '/tmp/a', '/tmp/b'], ['xdg-open', '--help'],
+    ['xdg-open', 'https://example.com/'], ['xdg-open', 'http://127.0.0.1/'],
+    ['xdg-open', 'file:///tmp/a'], ['xdg-open', 'custom-handler:payload'],
+    ['xdg-open', 'relative.txt'], ['xdg-open', '//server/share'],
+    ['xdg-open', '/tmp/../etc/passwd'], ['xdg-open', '/tmp/./a'],
+    ['xdg-open', '/tmp/a\u0000.txt'], ['xdg-open', '/tmp/a\n.txt'],
+    ['xdg-open', '/tmp/a\\b'], ['xdg-open', '/tmp/app.desktop'],
+    ['/tmp/xdg-open', '/tmp/a'], ['/usr/local/bin/xdg-open', '/tmp/a'],
+    ['omarchy-agent-crash'], ['omarchy-agent-crash', '--help'],
+    ['omarchy-agent-crash', '0'], ['omarchy-agent-crash', '2147483648'],
+    ['omarchy-agent-crash', '-1'], ['omarchy-agent-crash', '1\n'],
+    ['omarchy-agent-crash', '1', 'a', 'b', 'c', 'extra'],
+    ['/tmp/omarchy-agent-crash', '1'],
+  ]) assert.equal(S.parseOmarchyExecArgv(JSON.stringify(argv)), null, JSON.stringify(argv));
   const omarchy = Store.snapshot({
     appName: 'omarchy-action', summary: 'Screenshot saved',
     body: 'Edit with Super + Alt + ,', hints: { 'omarchy-exec-argv': shot }
@@ -703,18 +812,6 @@ for (const u of ['https://example.com/', 'https://sub.example.co.uk/', 'https://
     hints: { 'omarchy-exec-argv': shot }
   }, 'slack', { Normal: 1 });
   assert.equal(slack.execArgv, '');
-  const qml = fs.readFileSync(__dirname + '/../Service.qml', 'utf8');
-  assert.match(qml, /Security\.parseOmarchyExecArgv\(row \? row\.execArgv/);
-  const run = qml.match(/function runExecArgv\(argv\) \{[\s\S]*?\n  \}/)[0];
-  const calls = [];
-  const scope = { Quickshell: { execDetached: argv => calls.push(argv) } };
-  vm.createContext(scope);
-  vm.runInContext(run, scope);
-  scope.runExecArgv(['tensaku-edit', '/tmp/shot.png']);
-  assert.equal(JSON.stringify(calls[0]), JSON.stringify(['/usr/bin/env', 'tensaku-edit', '/tmp/shot.png']));
-  calls.length = 0;
-  scope.runExecArgv(['/usr/bin/tensaku-edit', '/tmp/shot.png']);
-  assert.equal(JSON.stringify(calls[0]), JSON.stringify(['/usr/bin/tensaku-edit', '/tmp/shot.png']));
 }
 
 console.log('security JS: passed');
