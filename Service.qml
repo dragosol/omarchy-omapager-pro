@@ -801,9 +801,20 @@ Item {
 
   // A single clock the cards' relative times hang off. Per-card timers would
   // be a dozen wakeups a minute to move the word "now" to "1m".
+  //
+  // It has to run for the Notifications panel as well as the on-screen deck. The panel is
+  // normally opened when nothing is on screen, so a clock that only ran while toasts.count > 0
+  // was frozen at whatever it last read, usually the shell's start. Every card in the panel
+  // then measured its age against a time BEFORE it arrived, (now - t) came out negative, the
+  // Math.max(0, ...) in Toast.ago() clamped it to zero, and every notification in the panel
+  // read "now" no matter how old it was.
   property double nowTick: Date.now()
-  Timer { interval: 20000; repeat: true; running: toasts.count > 0
+  Timer { interval: 20000; repeat: true
+          running: toasts.count > 0 || service.missedVisible
           onTriggered: service.nowTick = Date.now() }
+  // The first paint must be right too: without this the panel shows stale times until the
+  // timer's first tick, up to twenty seconds later.
+  onMissedVisibleChanged: if (service.missedVisible) service.nowTick = Date.now()
 
   // ------------------------------------------------------------- the deck
   //
