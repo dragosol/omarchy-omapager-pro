@@ -2805,8 +2805,14 @@ Item {
     var job = queue.shift()
     replyQueue = queue
     findProc.job = job
-    findProc.command = [kdeBin, "find", job.source, job.body]
+    // The body is the message itself. Anything in a command line is readable by every other
+    // account on this machine through /proc/<pid>/cmdline for as long as the process lives,
+    // so it goes down stdin instead; only the app name stays an argument.
+    findProc.command = [kdeBin, "find", job.source]
+    findProc.stdinEnabled = true
     findProc.running = true
+    findProc.write(job.body)
+    findProc.stdinEnabled = false
   }
 
   Timer {
@@ -2822,8 +2828,16 @@ Item {
     if (!helperSettingsReady || !path || !String(text).trim() || String(text).length > 4096 || replyProc.running) return
     replyProc.running = false
     replyProc.replyKey = key
-    replyProc.command = [kdeBin, "reply", path, String(text), String(toasts.get(at).source), String(toasts.get(at).bodyLine)]
+    // Same reason as the lookup, and more so: this is what the user just typed. Only the
+    // D-Bus object path stays an argument; the reply, the app name and the body it is
+    // re-matched against go down stdin as JSON.
+    replyProc.command = [kdeBin, "reply", path]
+    replyProc.stdinEnabled = true
     replyProc.running = true
+    replyProc.write(JSON.stringify({ text: String(text),
+                                     source: String(toasts.get(at).source),
+                                     body: String(toasts.get(at).bodyLine) }))
+    replyProc.stdinEnabled = false
 
   }
 
@@ -2869,13 +2883,17 @@ Item {
       return
     }
 
+    // wl-copy copies whatever it is given on stdin when no value is passed as an argument.
+    // A verification code handed over as an argument would sit in /proc/<pid>/cmdline, which
+    // --sensitive does nothing about: that flag only asks clipboard managers not to keep it.
     var args = ["wl-copy"]
     if (sensitive) args.push("--sensitive")
-    args.push("--")
-    args.push(value)
     clipProc.running = false
     clipProc.command = args
+    clipProc.stdinEnabled = true
     clipProc.running = true
+    clipProc.write(value)
+    clipProc.stdinEnabled = false
     if (sensitive) { secretHeld = value; secretLife.restart() }
   }
 

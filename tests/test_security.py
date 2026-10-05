@@ -238,11 +238,54 @@ class Replies(unittest.TestCase):
         payloads=['; rm -rf ~','$(touch /tmp/pwned)','`touch /tmp/pwned`','--help','quotes"\n\\']
         target='/modules/kdeconnect/devices/device/notifications/1'
         for text in payloads:
-            with patch.object(sys,'argv',['helper','reply',target,text,'Chat','body']),patch.object(self.k,'find',return_value={'path':target}),patch.object(self.k.subprocess,'run',return_value=MagicMock(returncode=0)) as run:
+            payload=json.dumps({'text':text,'source':'Chat','body':'body'})
+            with patch.object(sys,'argv',['helper','reply',target]),\
+                    patch.object(sys,'stdin',io.StringIO(payload)),\
+                    patch.object(self.k,'find',return_value={'path':target}),\
+                    patch.object(self.k,'send_reply',return_value=True) as send,\
+                    patch.object(self.k.subprocess,'run',return_value=MagicMock(returncode=0)) as run:
                 with contextlib.redirect_stdout(io.StringIO()): self.assertEqual(self.k.main(),0)
-                self.assertEqual(run.call_args_list[0].args[0][-1],text)
-                self.assertEqual(run.call_args_list[0].args[0][2],"--")
-                self.assertNotIn('shell',run.call_args_list[0].kwargs)
+                # The reply reaches D-Bus verbatim, as data.
+                self.assertEqual(send.call_args.args[1],text)
+                self.assertNotIn('shell',run.call_args_list[0].kwargs) if run.call_args_list else None
+
+    def test_reply_text_never_reaches_a_command_line(self):
+        """A command line is world-readable through /proc/<pid>/cmdline for as long as the
+        process lives, so the reply and the body it is matched against must never appear in
+        one. This is the property, not the mechanism: it holds however the reply is sent."""
+        secret='SquirrelCorrectBattery42'
+        body='PrivateBodyText99'
+        target='/modules/kdeconnect/devices/device/notifications/1'
+        payload=json.dumps({'text':secret,'source':'Chat','body':body})
+        seen=[]
+        def record(argv,*a,**k):
+            seen.append(list(argv))
+            return MagicMock(returncode=0,stdout='')
+        with patch.object(sys,'argv',['helper','reply',target]),\
+                patch.object(sys,'stdin',io.StringIO(payload)),\
+                patch.object(self.k,'find',return_value={'path':target}),\
+                patch.object(self.k,'send_reply',return_value=True),\
+                patch.object(self.k.subprocess,'run',side_effect=record):
+            with contextlib.redirect_stdout(io.StringIO()): self.k.main()
+        for argv in seen:
+            for arg in argv:
+                self.assertNotIn(secret,str(arg),f'reply text leaked into argv: {argv}')
+                self.assertNotIn(body,str(arg),f'body leaked into argv: {argv}')
+
+    def test_find_body_never_reaches_a_command_line(self):
+        body='PrivateBodyText99'
+        seen=[]
+        def record(argv,*a,**k):
+            seen.append(list(argv))
+            return MagicMock(returncode=0,stdout='')
+        with patch.object(sys,'argv',['helper','find','Chat']),\
+                patch.object(sys,'stdin',io.StringIO(body)),\
+                patch.object(self.k,'listing',return_value=[]),\
+                patch.object(self.k.subprocess,'run',side_effect=record):
+            with contextlib.redirect_stdout(io.StringIO()): self.k.main()
+        for argv in seen:
+            for arg in argv:
+                self.assertNotIn(body,str(arg),f'body leaked into argv: {argv}')
     def test_demo_cannot_impersonate_a_real_phone_app(self):
         with tempfile.TemporaryDirectory() as temp:
             fixture = Path(temp) / 'notification.json'
@@ -266,8 +309,10 @@ class Replies(unittest.TestCase):
                 self.assertIsNotNone(original)
                 current['token'] = 'b' * 32
                 files.write_json(fixture, current)
-                with patch.object(sys, 'argv', ['helper', 'reply', original['path'], 'must not be sent',
-                                               'Omapager reply demo', 'Demo sender: hello']):
+                with patch.object(sys, 'argv', ['helper', 'reply', original['path']]), \
+                        patch.object(sys, 'stdin', io.StringIO(json.dumps(
+                            {'text': 'must not be sent', 'source': 'Omapager reply demo',
+                             'body': 'Demo sender: hello'}))):
                     self.assertEqual(self.k.main(), 1)
                 self.assertFalse(reply.exists())
                 current['created'] = time.time() - self.k.FIXTURE_MAX_AGE - 1

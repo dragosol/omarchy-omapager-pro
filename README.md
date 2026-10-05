@@ -68,7 +68,10 @@ open links, directly from a notification. Multiple codes get separate buttons.
 without opening the app.
 
 **Inline replies.** Reply to supported KDE Connect messages without leaving the
-notification.
+notification. What you type, and the message it answers, are passed to the helper on its
+standard input and handed to D-Bus from inside it, never as command-line arguments: a command
+line is readable by every other account on the machine for as long as the process lives.
+Copied verification codes go to the clipboard the same way.
 
 **Window focus.** Click a notification to focus its app or browser window.
 Web notifications open their source URL when no matching window is available.
@@ -468,7 +471,9 @@ vulnerability.
 ## Requirements
 
 - Omarchy with Quickshell 0.3.x and Hyprland.
-- Python 3 for the helpers.
+- Python 3 for the helpers, with GObject introspection (`python-gobject`) so a reply can be
+  handed to KDE Connect over D-Bus from inside the helper. Without it, replies fail rather
+  than falling back to a command line that other local accounts could read.
 - Pillow, packaged as `python-pillow`, for remote website icons and sender-provided
   image files. Without it, sender files fall back to local theme icons.
 - Bubblewrap, packaged as `bubblewrap`, is optional unless `requireSandbox` is on.

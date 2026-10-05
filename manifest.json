@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.dragosol.omapager-pro",
   "name": "Omapager Pro",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "author": "Dragos Robu (fork of Omapager by Neil Jagdish Patel)",
   "license": "MIT",
   "description": "Revamped, full-featured notifications for Omarchy. Swipe a notification away with two fingers or the mouse, pull in everything you missed from the touchpad's edge or the top-right corner, and browse stacks that open as you point at them, in a minimalist design that matches your window borders.",

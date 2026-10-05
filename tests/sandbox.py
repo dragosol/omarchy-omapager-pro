@@ -62,9 +62,9 @@ assert not Path('/run/user/{os.getuid()}/bus').exists()
         subprocess.run(cmd[:cut] + ['/usr/bin/python3', '-c', code],
                        check=True, timeout=10)
         for args, readable, writable in [
-            (['find', 'Chat', 'hello'], False, False),
-            (['find', 'Omapager reply demo', 'hello'], True, False),
-            (['reply', 'demo:' + 'a' * 32, 'reply', 'Omapager reply demo', 'hello'], True, True),
+            (['find', 'Chat'], False, False),
+            (['find', 'Omapager reply demo'], True, False),
+            (['reply', 'demo:' + 'a' * 32], True, True),
         ]:
             with patch.dict(os.environ, {'DBUS_SESSION_BUS_ADDRESS': address,
                                          'XDG_RUNTIME_DIR': str(runtime)}):
