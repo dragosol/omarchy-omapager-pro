@@ -1773,7 +1773,7 @@ Item {
     if (at < 0) return
     var row = missed.get(at)
     if (row.live) { closeMissed(); activate(key); return }
-    var copy = { senderPid: row.senderPid, source: row.source, link: row.link }
+    var copy = { senderPid: row.senderPid, source: row.source, appIcon: row.appIcon, link: row.link }
     seeMissed([key])
     closeMissed()
     routeRow(copy)
@@ -2642,10 +2642,23 @@ Item {
     // otherwise match half the desktop.
     var slug = name.replace(/[^a-z0-9]+/g, "")
     if (slug.length < 4) return null
+    // Apps also go by a reverse-DNS class ("com.anthropic.Claude" for an app
+    // that calls itself "Claude"), and a Quickshell app is "org.quickshell"
+    // whatever it is - only its title ("Pear Messages") says which one. Titles
+    // count only when they are the whole name and the window is not a
+    // browser, where the title is whatever page happens to be open.
+    var whole = name.replace(/\s+/g, " ").trim()
     found = []
     for (i = 0; i < windows.length; i++) {
       var lower = windows[i].wmClass.toLowerCase()
       if (lower === slug) { found.push(windows[i]); continue }   // a native app
+      if (lower.indexOf(".") > 0 && lower.split(".").pop().replace(/[^a-z0-9]+/g, "") === slug) {
+        found.push(windows[i]); continue
+      }
+      if (!browserClasses.test(lower)
+          && windows[i].title.toLowerCase().replace(/\s+/g, " ").trim() === whole) {
+        found.push(windows[i]); continue
+      }
       if (lower.indexOf("chrome-") !== 0) continue
       var labels = lower.substring(7).split("__")[0].split(".")
       for (var l = 0; l < labels.length; l++)
@@ -2683,18 +2696,42 @@ Item {
     }
 
     var ref = refs[key]
-    var handled = false
+    var defaultAction = null
     if (allowDefaultActionOnCardClick && ref && ref.actions) {
       for (var i = 0; i < Math.min(ref.actions.length, Security.MAX_ACTIONS); i++) {
-        if (String(ref.actions[i].identifier) === "default") {
-          try { ref.actions[i].invoke(); handled = true } catch (e) {}
-          break
-        }
+        if (String(ref.actions[i].identifier) === "default") { defaultAction = ref.actions[i]; break }
       }
+    }
+
+    var handled = false
+    if (defaultAction) {
+      // Running the sender's "default" is not enough on Wayland: the app is
+      // told it was clicked and asks to be raised, but without an activation
+      // token Hyprland refuses, so Claude and every other Electron app just
+      // sat behind whatever you were in. Raise its window ourselves first;
+      // a window the action opens still comes up on top of it.
+      if (row) focusWindow(windowFor(row))
+      try { defaultAction.invoke(); handled = true } catch (e) {}
     }
 
     if (!handled && row) routeRow(row)
     closeToast(key, "activated")
+  }
+
+  // The window a row belongs to: the sender's own, then its source's, then
+  // the class its icon names. A terminal's notification often has no app
+  // name at all, only the icon "com.mitchellh.ghostty" - which is its class.
+  function windowFor(row) {
+    if (!row) return null
+    var win = windowForPid(row.senderPid) || windowForSource(row.source)
+    if (win) return win
+    var icon = String(row.appIcon || "").toLowerCase()
+    if (icon.indexOf(".") <= 0) return null
+    var windows = openWindows()
+    var found = []
+    for (var i = 0; i < windows.length; i++)
+      if (windows[i].wmClass.toLowerCase() === icon) found.push(windows[i])
+    return mostRecent(found)
   }
 
   // Where a click on this row goes, when the sender has no action of its own
@@ -2708,7 +2745,7 @@ Item {
     // the wrong place - including a Slack card that would have opened
     // axiom.co.
     // The sender's own window first, then the source's, then the site.
-    var win = windowForPid(row.senderPid) || windowForSource(row.source)
+    var win = windowFor(row)
     if (win) focusWindow(win)
     // Not `indexOf(".") > 0`. A source is lifted out of text the sender
     // wrote, and "https://" + it is a URL going wherever it says - so it
