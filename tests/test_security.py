@@ -286,6 +286,65 @@ class Replies(unittest.TestCase):
         for argv in seen:
             for arg in argv:
                 self.assertNotIn(body,str(arg),f'body leaked into argv: {argv}')
+    def test_replayed_notification_text_never_reaches_a_command_line(self):
+        """`omapager-demo --replay` reads real stored notifications and sends them again, so
+        the same property the reply path has must hold here: the summary and body must never
+        appear on a command line. This is the property, not the mechanism."""
+        demo=module('omapager-demo')
+        summary='PrivateSummary77'
+        body='PrivateReplayBody88'
+        seen=[]
+        def record(argv,*a,**k):
+            seen.append(list(argv))
+            return MagicMock(returncode=0,stdout='')
+        sent={}
+        def call_sync(name,path,iface,method,arguments,*a,**k):
+            sent['args']=arguments.unpack()
+            return MagicMock(unpack=lambda:(1,))
+        bus=MagicMock();bus.call_sync=call_sync
+        import gi;gi.require_version('Gio','2.0')
+        from gi.repository import Gio,GLib
+        with patch.object(demo,'_bus',(bus,Gio,GLib)),\
+                patch.object(demo.subprocess,'run',side_effect=record),\
+                patch.object(demo.subprocess,'Popen',side_effect=record):
+            demo.send({'app':'Chat','icon':'','summary':summary,'body':body},1000)
+        for argv in seen:
+            for arg in argv:
+                self.assertNotIn(summary,str(arg),f'summary leaked into argv: {argv}')
+                self.assertNotIn(body,str(arg),f'body leaked into argv: {argv}')
+        # and it did go out, as bus arguments rather than as a command line
+        self.assertIn(summary,sent['args'])
+        self.assertIn(body,sent['args'])
+
+    def test_demo_refuses_to_send_without_the_bus(self):
+        """Without python-gobject there is no way to post a notification except by putting
+        its text on a command line, so it must refuse rather than fall back to one."""
+        demo=module('omapager-demo')
+        seen=[]
+        def record(argv,*a,**k):
+            seen.append(list(argv))
+            return MagicMock(returncode=0,stdout='')
+        with patch.object(demo,'session_bus',return_value=None),\
+                patch.object(demo.subprocess,'run',side_effect=record),\
+                patch.object(demo.subprocess,'Popen',side_effect=record):
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertIsNone(demo.send({'app':'Chat','icon':'','summary':'S','body':'B'}))
+        self.assertEqual(seen,[],'it fell back to a command line')
+        self.assertIn('refusing',err.getvalue())
+
+    def test_demo_sends_no_notification_through_a_subprocess(self):
+        """The whole mechanism, read off the source: nothing in the demo may hand notification
+        text to notify-send, whose arguments are world-readable."""
+        source=(ROOT/'bin'/'omapager-demo').read_text()
+        # the name is still allowed as a fallback *app* name, which is what an unnamed sender
+        # shows up as; what must not come back is it heading a command list.
+        import re as _re
+        for n,line in enumerate(source.split('\n'),1):
+            if line.strip().startswith('#'):
+                continue
+            self.assertIsNone(_re.search(r'\[\s*[\'"]notify-send[\'"]',line),
+                              f'omapager-demo:{n} builds a notify-send command line: {line.strip()}')
+
     def test_demo_cannot_impersonate_a_real_phone_app(self):
         with tempfile.TemporaryDirectory() as temp:
             fixture = Path(temp) / 'notification.json'

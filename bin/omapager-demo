@@ -317,33 +317,103 @@ def warm(items):
 DEFAULT = ["chat", "work", "personal", "system"]
 
 
+NOTIFY_NAME = "org.freedesktop.Notifications"
+NOTIFY_PATH = "/org/freedesktop/Notifications"
+URGENCY = {"low": 0, "normal": 1, "critical": 2}
+
+_bus = None        # (connection, Gio, GLib) once connected, False once known unavailable
+_invoked = {}      # notification id -> the action key the user picked
+
+
+def session_bus():
+    """The session bus through Gio, so notification text never reaches a command line.
+
+    notify-send takes the summary and body as arguments, and --replay sends real stored
+    notifications back out, so on a shared machine any other local account could read
+    somebody's actual messages straight out of /proc/<pid>/cmdline. The bus carries the
+    same strings as method arguments, which are not visible that way. This is the same
+    reason the KDE Connect helper stopped shelling out to busctl.
+    """
+    global _bus
+    if _bus is None:
+        _bus = False
+        try:
+            import gi
+            gi.require_version("Gio", "2.0")
+            from gi.repository import Gio, GLib
+            connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        except Exception:
+            return None
+
+        def remember(_conn, _sender, _path, _iface, _signal, parameters):
+            ident, key = parameters.unpack()
+            _invoked[ident] = key
+            print(key, flush=True)
+
+        connection.signal_subscribe(None, NOTIFY_NAME, "ActionInvoked", NOTIFY_PATH,
+                                    None, Gio.DBusSignalFlags.NONE, remember)
+        _bus = (connection, Gio, GLib)
+    return _bus or None
+
+
 def send(n, timeout=None):
+    """Post one notification. Returns its id when it carries actions, else None."""
     who = identity(n)
     body = n.get("body", "")
     if n.get("web"):
         body = web(n["web"], body)
-    cmd = ["notify-send", "-a", who["app"], n["summary"], body]
+
+    hints = {}
     if n.get("image"):
         # The sender's own picture, the way a site's notification carries
         # one: shipped with the demo, so it is the same in every screenshot.
         demo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "demo")
-        cmd += ["-h", "string:image-path:" + os.path.abspath(os.path.join(demo, n["image"]))]
+        hints["image-path"] = os.path.abspath(os.path.join(demo, n["image"]))
     if who["icon"]:
-        cmd += ["-i", who["icon"], "-h", "string:desktop-entry:" + who["icon"]]
-    if n.get("urgency"):
-        cmd += ["-u", n["urgency"]]
-    if timeout is not None:
-        cmd += ["-t", str(timeout)]
+        hints["desktop-entry"] = who["icon"]
+
+    # notify-send -A takes name=label; the bus wants them as a flat key, label, key, label list.
+    actions = []
     for action in n.get("actions", []):
-        cmd += ["-A", action]
-    if n.get("actions"):
-        # notify-send waits around for an action to be invoked, which is the
-        # only way the buttons keep working - so it has to be left running.
-        return subprocess.Popen(cmd,
-                                stdout=None if n.get("report_action") else subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL)
-    else:
-        subprocess.run(cmd, check=False)
+        key, _, label = action.partition("=")
+        actions += [key, label or key]
+
+    bus = session_bus()
+    if bus is None:
+        print("python-gobject is missing, so there is no way to send a notification "
+              "without putting its text on a command line; refusing", file=sys.stderr)
+        return None
+    connection, Gio, GLib = bus
+
+    variants = {k: GLib.Variant("s", v) for k, v in hints.items()}
+    if n.get("urgency"):
+        variants["urgency"] = GLib.Variant("y", URGENCY[n["urgency"]])
+    arguments = GLib.Variant("(susssasa{sv}i)", (
+        who["app"], 0, who["icon"] or "", n["summary"], body, actions, variants,
+        -1 if timeout is None else int(timeout),
+    ))
+    try:
+        reply = connection.call_sync(NOTIFY_NAME, NOTIFY_PATH, NOTIFY_NAME, "Notify",
+                                     arguments, None, Gio.DBusCallFlags.NONE, 5000, None)
+    except Exception as e:
+        print("could not post a notification: %s" % e, file=sys.stderr)
+        return None
+    return reply.unpack()[0] if n.get("actions") else None
+
+
+def wait_for_actions(identifiers, limit=120):
+    """Hold the terminal open until each of those notifications has been answered."""
+    bus = session_bus()
+    if bus is None or not identifiers:
+        return
+    _connection, _Gio, GLib = bus
+    context = GLib.main_context_default()
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
+        if all(i in _invoked for i in identifiers):
+            return
+        if not context.iteration(False):
+            time.sleep(0.05)
 
 
 def replay(limit, match):
@@ -456,16 +526,15 @@ def run(scenes, gap, timeout, shuffle):
         if shuffle:
             random.shuffle(items)
         for n in items:
-            process = send(n, timeout)
-            if process is not None and n.get("report_action"):
-                reporting.append(process)
+            identifier = send(n, timeout)
+            if identifier is not None and n.get("report_action"):
+                reporting.append(identifier)
             # A notification can ask to be followed quickly: a burst from one
             # source is how a stack forms, and at the scene's normal pace the
             # first card has half faded before the second lands.
             time.sleep(min(gap, n["gap"]) if "gap" in n else gap)
     # Keep the reporting scene's terminal alive until its senders have answered.
-    for process in reporting:
-        process.wait()
+    wait_for_actions(reporting)
 
 
 def main():

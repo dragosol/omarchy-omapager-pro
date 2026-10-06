@@ -389,7 +389,7 @@ bin/omapager-demo --scene interactive   # codes, links, and the sender's buttons
 bin/omapager-demo --scene routing       # where a click sends you, per source
 bin/omapager-demo --scene reply --keep --timeout 30000  # local inline-reply demo
 bin/omapager-demo --scene close         # dismiss a stack without moving the pointer
-bin/omapager-demo --replay 40           # your own notifications, re-sent
+bin/omapager-demo --replay 40           # your own notifications, re-sent (over the bus, never on a command line)
 bin/omapager-demo --scene showcase      # a mix of senders and stacks, for a screenshot
 bin/omapager-demo --list
 ```

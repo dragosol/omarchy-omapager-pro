@@ -2,6 +2,15 @@
 
 ## Omapager Pro
 
+- `omapager-demo` posts notifications over the session bus instead of spawning
+  `notify-send`. `--replay` re-sends real stored notifications, and
+  `notify-send` takes the summary and body as arguments, so on a shared machine
+  another local account could read somebody's actual messages out of
+  `/proc/<pid>/cmdline`. Bus arguments are not visible that way. Actions come
+  back as `ActionInvoked` rather than by keeping a `notify-send` process alive,
+  and with python-gobject missing the demo refuses rather than falling back to a
+  command line. Reported by the marketplace review of `cdd4c27`.
+
 - A card click now runs the sender's `default` action by default
   (`allowDefaultActionOnCardClick: true`), matching Omarchy's built-in
   notification service. It is still only ever invoked by an explicit click,
