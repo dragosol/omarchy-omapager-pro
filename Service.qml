@@ -1950,11 +1950,108 @@ Item {
       }
     }
   }
-  Component.onCompleted: { naturalProbe.running = true; borderProbe.running = true }
+  // How see-through a card is: what an unfocused window is drawn at, since a
+  // notification never has the focus. That lives in a window rule (Omarchy's
+  // default-opacity, or the user's own restatement of it), and rules cannot be
+  // queried, so it is read off a real window that carries the rule. With no
+  // such window, Hyprland's own decoration:inactive_opacity is what applies.
+  property real windowOpacity: 1
+  property real decorationOpacity: 1
+  property string opacityWindow: ""
+  property real ruleOpacity: -1
+  property bool ruleOverride: false
+  Process {
+    id: decorationOpacityProbe
+    command: ["hyprctl", "-j", "getoption", "decoration:inactive_opacity"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var n = Number(JSON.parse(text).float)
+          if (isFinite(n)) service.decorationOpacity = Math.max(0, Math.min(1, n))
+        } catch (e) {}
+        service.settleWindowOpacity()
+      }
+    }
+  }
+  Process {
+    id: opacityWindowProbe
+    command: ["hyprctl", "-j", "clients"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var best = null
+        try {
+          var clients = JSON.parse(text)
+          for (var i = 0; i < clients.length; i++) {
+            var c = clients[i]
+            var tagged = (c.tags || []).some(function(t) { return String(t).replace(/\*$/, "") === "default-opacity" })
+            if (tagged && c.mapped !== false && (!best || c.focusHistoryID < best.focusHistoryID)) best = c
+          }
+        } catch (e) {}
+        service.opacityWindow = best ? String(best.address) : ""
+        service.ruleOpacity = -1
+        if (service.opacityWindow !== "") ruleOpacityProbe.running = true
+        else service.settleWindowOpacity()
+      }
+    }
+  }
+  Process {
+    id: ruleOpacityProbe
+    command: ["hyprctl", "-j", "getprop", "address:" + service.opacityWindow, "opacity_inactive"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var n = Number(JSON.parse(text).opacity_inactive)
+          if (isFinite(n)) service.ruleOpacity = Math.max(0, Math.min(1, n))
+        } catch (e) {}
+        ruleOverrideProbe.running = true
+      }
+    }
+  }
+  Process {
+    id: ruleOverrideProbe
+    command: ["hyprctl", "-j", "getprop", "address:" + service.opacityWindow, "opacity_inactive_override"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try { service.ruleOverride = JSON.parse(text).opacity_inactive_override === true }
+        catch (e) { service.ruleOverride = false }
+        service.settleWindowOpacity()
+      }
+    }
+  }
+  // Without `override` a rule's value multiplies the decoration one, which is
+  // how Hyprland itself draws the window.
+  function settleWindowOpacity() {
+    if (ruleOpacity < 0) windowOpacity = decorationOpacity
+    else windowOpacity = ruleOverride ? ruleOpacity : ruleOpacity * decorationOpacity
+  }
+  function probeWindowOpacity() {
+    decorationOpacityProbe.running = true
+    opacityWindowProbe.running = true
+  }
+  // Blur is Hyprland's to give: a layer surface is only blurred when a
+  // layer_rule asks for it, and Omarchy ships none for this namespace. The
+  // rule only asks - decoration:blur decides whether, and how much - and
+  // ignore_alpha keeps the blur to the cards, not the empty canvas around
+  // them. A config reload drops runtime rules, so it is restated after each.
+  Process {
+    id: blurRule
+    command: ["hyprctl", "eval",
+      'hl.layer_rule({ name = "omapager-blur", match = { namespace = "^omapager$" }, blur = true, ignore_alpha = 0.1 })']
+  }
+  Component.onCompleted: {
+    naturalProbe.running = true; borderProbe.running = true
+    blurRule.running = true; probeWindowOpacity()
+  }
   Connections {
     target: Hyprland
     function onRawEvent(event) {
-      if (event.name === "configreloaded") { naturalProbe.running = true; borderProbe.running = true }
+      if (event.name === "configreloaded") {
+        naturalProbe.running = true; borderProbe.running = true
+        blurRule.running = true; probeWindowOpacity()
+      } else if (event.name === "openwindow" && service.opacityWindow === "") {
+        // Started on an empty desktop: the first window brings the rule.
+        opacityWindowProbe.running = true
+      }
     }
   }
 
@@ -3132,6 +3229,7 @@ Item {
         swipeKeys: service.swipeKeys.length, swipeX: service.swipeX,
         thrown: Object.keys(service.thrown).length, lastWheel: service.lastWheel, wheelLog: service.wheelLog,
         naturalScroll: service.naturalScroll, windowBorderWidth: service.windowBorderWidth,
+        windowOpacity: service.windowOpacity,
         scrollY: service.scrollY, scrollMax: service.scrollMax, deckRoom: service.deckRoom,
         layoutHeight: service.layout.height,
         edgeSwipe: service.edgeSwipe, edgeStatus: service.edgeStatus,
@@ -3731,6 +3829,7 @@ Item {
             actions: service.actionsOf(model.key, service.refsRevision)
             fontScale: service.fontScale
             windowBorderWidth: service.windowBorderWidth
+            cardOpacity: service.windowOpacity
             showCountdown: service.showCountdown
             actionsAlign: service.actionsAlign
             replyError: service.replyingKey === model.key ? service.replyError : ""
@@ -3829,7 +3928,9 @@ Item {
             width: parent.width
             height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
             radius: Style.cornerRadius
-            color: Color.notifications.background
+            color: Qt.rgba(Color.notifications.background.r, Color.notifications.background.g,
+                           Color.notifications.background.b,
+                           Color.notifications.background.a * service.windowOpacity)
             // The cards' own edge - the window border - so the heading reads
             // as one of them.
             borderSpec: Border.hyprlandActiveSpec(Color.notifications.border,
@@ -4009,6 +4110,7 @@ Item {
                     hoverY: service.missedHoverY - missedSlot.y
                     fontScale: service.fontScale
                     windowBorderWidth: service.windowBorderWidth
+                    cardOpacity: service.windowOpacity
                     actionsAlign: service.actionsAlign
                     now: service.nowTick
                     swipe: {

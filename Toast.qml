@@ -69,6 +69,9 @@ Item {
   // Hyprland's own border_size when the theme does not set one - that is
   // what the windows are actually drawn with.
   property int windowBorderWidth: 2
+  // The opacity Hyprland draws an unfocused window at, so a card is as
+  // see-through as the windows around it (and the blur behind shows).
+  property real cardOpacity: 1
   readonly property var windowBorderSpec: Border.hyprlandActiveSpec(
       Color.notifications.border, windowBorderWidth)
   // A card underneath the front one of a shut stack is only an edge peeking
@@ -413,7 +416,8 @@ Item {
     width: body.width
     height: body.height
     radius: Style.cornerRadius
-    color: Color.notifications.background
+    color: Qt.rgba(Color.notifications.background.r, Color.notifications.background.g,
+                   Color.notifications.background.b, Color.notifications.background.a * card.cardOpacity)
     borderSpec: card.cardBorderSpec
   }
 
