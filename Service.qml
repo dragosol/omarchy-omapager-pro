@@ -1379,6 +1379,7 @@ Item {
 
   function startPanel() {
     missedOpenDeck = ""
+    missedPhysics.stop()
     missedScroll = 0
     syncLive()
     refreshMissed()                  // only adds what is new since the last read
@@ -1801,11 +1802,22 @@ Item {
     onTriggered: service.endMissedGesture()
   }
 
+  // Pear Messages' scroll physics: momentum when the fingers lift, a band past
+  // either end, a glide for a mouse notch. The pile under the heading follows
+  // missedScroll, so it coasts with the list.
+  property ScrollPhysics missedPhysics: ScrollPhysics {
+    target: service
+    prop: "missedScroll"
+    max: service.missedScrollMax
+    extent: service.missedViewHeight
+  }
+  property real missedViewHeight: 1
+
   function missedWheel(ev, under) {
     var px = ev.pixelDelta, phase = ev.phase === undefined ? -1 : ev.phase
     if (phase === Qt.ScrollEnd) { endMissedGesture(); return true }
     if (px.x === 0 && px.y === 0) {
-      scrollMissed(ev.angleDelta.y / 120 * Style.space(56))
+      missedPhysics.notch(-ev.angleDelta.y / 120 * Style.space(56))
       return true
     }
     if (missedSlide.running || throwMissed.running) return true
@@ -1818,15 +1830,13 @@ Item {
       if (missedSwipeKey) missedSwipeX = Gesture.drawn(missedGesture.x)
       else missedShown = Math.max(0, Math.min(1, 1 - Math.max(0, missedGesture.x) / notificationWidth))
     } else if (missedGesture.axis === "y") {
-      scrollMissed(px.y)
+      missedPhysics.push(-px.y)
     }
     return true
   }
 
-  function scrollMissed(dy) {
-    missedScroll = Math.max(0, Math.min(missedScrollMax, missedScroll - dy))
-  }
-  onMissedScrollMaxChanged: if (missedScroll > missedScrollMax) missedScroll = missedScrollMax
+  // Not while the physics has it: a band past the end is meant to be there.
+  onMissedScrollMaxChanged: if (!missedPhysics.busy && missedScroll > missedScrollMax) missedScroll = missedScrollMax
 
   // The front card of a stack wearing its count carries the stack; any
   // other card only itself - the deck's rule.
@@ -1863,6 +1873,7 @@ Item {
     missedFingersUp.stop()
     var g = missedGesture
     missedGesture = null
+    missedPhysics.letGo()
     if (!g || g.axis !== "x") return
     if (missedSwipeKey) {
       if (Gesture.throws(g, notificationWidth)) {
@@ -4032,6 +4043,13 @@ Item {
               when: surface.showingNotifications
               restoreMode: Binding.RestoreNone     // as deckRoom, above
               value: Math.max(0, service.missedLayout.height + service.edgeSpacing - missedViewport.height)
+            }
+            Binding {
+              target: service
+              property: "missedViewHeight"
+              when: surface.showingNotifications && missedViewport.height > 0
+              restoreMode: Binding.RestoreNone
+              value: missedViewport.height
             }
 
             Item {
