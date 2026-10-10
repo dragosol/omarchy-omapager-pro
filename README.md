@@ -23,7 +23,7 @@ See [Credits](#credits).
 | Two fingers right on a stack's front card | throw the whole stack |
 | Two fingers left on a card | reveal the whole Notifications panel, pulled in behind the card as your fingers move |
 | Two fingers onto the touchpad over its right edge | pull in the Notifications panel, following your fingers, as on a Mac |
-| Two fingers up and down | scroll a list taller than the screen |
+| Two fingers up and down | scroll a list taller than the screen - with momentum, and a stretch at either end |
 | Mouse: drag a card right | throw it away, as with two fingers |
 | Mouse: drag a card left | reveal the whole Notifications panel |
 | Mouse: drag the panel heading right | put the panel away |
@@ -41,13 +41,19 @@ missed - notifications that timed out, or were held back by a snooze or Do Not
 Disturb. What you dismissed stays gone. Notifications already on screen travel
 into the panel as it slides in; one stack per source, opened by resting the
 pointer on its front card; **Clear stack** and **Clear all**; swipe the heading
-to put it away. It closes itself once you leave it.
+to put it away. It closes itself once you leave it. Scroll a long panel and the cards
+going past the top slide under the heading and pile up behind it like a shut
+stack, instead of being cut off.
 
 **Quieter cards.** The card border is your window border - the theme's active
 border colour or gradient, and Hyprland's border width - with regular-weight
 titles, soft count badges and unoutlined controls. Stacks show their count, open
 decks hold long messages to three lines until you rest on one, and decks taller
 than the screen scroll instead of running off it.
+
+**Matches your windows.** Cards are as see-through as Hyprland draws an
+unfocused window (your `default-opacity` rule, or `decoration:inactive_opacity`),
+and blurred behind when `decoration:blur` is on.
 
 ## Features
 
