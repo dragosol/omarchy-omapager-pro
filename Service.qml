@@ -4083,11 +4083,17 @@ Item {
                   // below it the way a shut deck's cards do - deeper ones
                   // lower, narrower, and gone after the third. Pinned by the
                   // bottom edge, the moment only a peek of it is left.
+                  // On its way under, it already shrinks: from full size at the
+                  // top of the list to the first step of the deck's shrink by
+                  // the time it lands, so it reads as going into the pile
+                  // rather than being cut off by the heading - and lands at
+                  // exactly the size and place the pile then takes it from.
                   readonly property real pinTop: y - service.missedScroll
                   readonly property real pinRest: -service.gap + Layout.PEEK
-                  readonly property real pinPast: pinRest - (pinTop + height)
+                  readonly property real pinEnter: Math.max(0, Math.min(1, -pinTop / Math.max(1, height - pinRest)))
+                  readonly property real pinPast: pinRest - (pinTop + height * (1 - Layout.SHRINK * pinEnter))
                   readonly property real pinDepth: pinPast > 0 ? pinPast / (height + service.gap) : 0
-                  readonly property real pinScale: 1 - Layout.SHRINK * Math.min(pinDepth, 3)
+                  readonly property real pinScale: 1 - Layout.SHRINK * (pinPast > 0 ? 1 + Math.min(pinDepth, 2) : pinEnter)
                   readonly property real pinOpacity: Math.max(0, Math.min(1, 2.5 - pinDepth))
                   readonly property real pinShift: pinPast > 0
                       ? pinRest + Layout.PEEK * Math.min(pinDepth, 2) - height * pinScale - pinTop : 0
