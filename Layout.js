@@ -114,10 +114,17 @@ function compute(rows, opts) {
         shown += 1
       } else {
         var drawn = r < VISIBLE
+        var scale = Math.max(0.7, 1 - r * SHRINK)
+        var ahead = Math.max(0.7, 1 - (r - 1) * SHRINK)
         placements[item.key] = {
           height: frontHeight,
           y: deckTop + r * PEEK,
-          scale: Math.max(0.7, 1 - r * SHRINK),
+          scale: scale,
+          // How far down this card the one in front of it reaches, in the
+          // card's own (unscaled) pixels. The cards are translucent, so what
+          // is under the front card must not be painted at all: three fills
+          // stacked are opaque, and the blur behind never shows.
+          cover: r === 0 ? 0 : Math.max(0, (frontHeight * ahead - PEEK) / scale),
           opacity: r === 0 ? 1 : (drawn ? (r === VISIBLE - 1 ? FADE : 0.85) : 0),
           z: 1000 - r,
           front: r === 0,
