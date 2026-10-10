@@ -3636,7 +3636,12 @@ Item {
         // same strip of screen, and the panel is what the fingers asked for.
         // The panel draws the live cards itself while it is up - they travel
         // into it - so the deck steps aside entirely rather than fading.
-        opacity: service.missedUp ? 0 : 1
+        // Translucent the way a window is: everything drawn opaque, then the
+        // whole deck at the window opacity. Fading each card instead lets the
+        // cards of a stack show through one another whenever they overlap -
+        // shut, opening or closing - and stacked fills turn opaque.
+        opacity: (service.missedUp ? 0 : 1) * service.windowOpacity
+        layer.enabled: service.windowOpacity < 0.999
         // ...but not its input while it is the thing pulling the panel in:
         // switching the deck off mid-pull cut off the very gesture doing it.
         enabled: !service.missedUp || service.pullingPanel
@@ -3829,7 +3834,6 @@ Item {
             actions: service.actionsOf(model.key, service.refsRevision)
             fontScale: service.fontScale
             windowBorderWidth: service.windowBorderWidth
-            cardOpacity: service.windowOpacity
             showCountdown: service.showCountdown
             actionsAlign: service.actionsAlign
             replyError: service.replyingKey === model.key ? service.replyError : ""
@@ -3892,6 +3896,9 @@ Item {
       Item {
         id: missedPanel
         visible: surface.showingNotifications && service.missedVisible
+        // One translucent layer, like the deck (see clipper).
+        opacity: service.windowOpacity
+        layer.enabled: service.windowOpacity < 0.999
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
@@ -3924,13 +3931,13 @@ Item {
           // had lost its panel.
           BorderSurface {
             id: missedHeader
+            // Above the list: cards scrolled up go under it, into the pile.
+            z: 2
             opacity: service.missedPeeking ? 1 : missedPanel.fadeIn
             width: parent.width
             height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
             radius: Style.cornerRadius
-            color: Qt.rgba(Color.notifications.background.r, Color.notifications.background.g,
-                           Color.notifications.background.b,
-                           Color.notifications.background.a * service.windowOpacity)
+            color: Color.notifications.background
             // The cards' own edge - the window border - so the heading reads
             // as one of them.
             borderSpec: Border.hyprlandActiveSpec(Color.notifications.border,
@@ -4013,7 +4020,11 @@ Item {
             // viewport until the panel arrives, and clipping cut them in
             // half on the way. The list is at its top then, so nothing
             // needs hiding.
-            clip: service.missedShown >= 0.999
+            //
+            // Nothing scrolls out of the top either: a card that goes past
+            // it slides under the heading and piles up there (missedSlot's
+            // pin), so the only edge left to cut is the screen's own.
+            clip: false
 
             Binding {
               target: service
@@ -4043,9 +4054,11 @@ Item {
                   width: missedList.width
                   height: missedCard.height
                   y: place.y
-                  z: place.z + (live ? 1000 : 0)
+                  // In the pile, the newest card is nearest the heading and the
+                  // card still scrolling up passes over all of it.
+                  z: pinPast > 0 ? -1 - pinDepth : place.z + (live ? 1000 : 0)
                   transformOrigin: Item.Top
-                  enabled: !place.hidden
+                  enabled: !place.hidden && pinPast <= 0
 
                   // A card that is on screen now starts where the deck has
                   // it and travels to its place in the panel as the panel
@@ -4062,7 +4075,22 @@ Item {
                   readonly property real panelY: missedViewport.y + y - service.missedScroll
                   scale: place.scale + ((deckPlace ? deckPlace.scale : place.scale) - place.scale) * away
                   opacity: (live ? place.opacity + ((deckPlace ? deckPlace.opacity : 0) - place.opacity) * away
-                                 : place.opacity * missedPanel.fadeIn) * enter
+                                 : place.opacity * missedPanel.fadeIn) * enter * pinOpacity
+
+                  // Scrolled past the top, a card goes under the heading and
+                  // stays there: the heading is the front of a stack and the
+                  // cards that went by are the ones behind it, peeking out
+                  // below it the way a shut deck's cards do - deeper ones
+                  // lower, narrower, and gone after the third. Pinned by the
+                  // bottom edge, the moment only a peek of it is left.
+                  readonly property real pinTop: y - service.missedScroll
+                  readonly property real pinRest: -service.gap + Layout.PEEK
+                  readonly property real pinPast: pinRest - (pinTop + height)
+                  readonly property real pinDepth: pinPast > 0 ? pinPast / (height + service.gap) : 0
+                  readonly property real pinScale: 1 - Layout.SHRINK * Math.min(pinDepth, 3)
+                  readonly property real pinOpacity: Math.max(0, Math.min(1, 2.5 - pinDepth))
+                  readonly property real pinShift: pinPast > 0
+                      ? pinRest + Layout.PEEK * Math.min(pinDepth, 2) - height * pinScale - pinTop : 0
                   // A row that turns up after the panel is already in slides
                   // in from the edge the panel came from, rather than
                   // appearing in place.
@@ -4075,10 +4103,17 @@ Item {
                     easing.type: Easing.OutCubic
                   }
                   Component.onCompleted: if (service.missedShown >= 0.999) enterRun.start()
-                  transform: Translate {
-                    x: -missedSlot.away * missedPanel.away + (1 - missedSlot.enter) * missedPanel.away
-                    y: missedSlot.away * (missedSlot.deckY - missedSlot.panelY)
-                  }
+                  transform: [
+                    Scale {
+                      origin.x: missedSlot.width / 2
+                      xScale: missedSlot.pinScale
+                      yScale: missedSlot.pinScale
+                    },
+                    Translate {
+                      x: -missedSlot.away * missedPanel.away + (1 - missedSlot.enter) * missedPanel.away
+                      y: missedSlot.away * (missedSlot.deckY - missedSlot.panelY) + missedSlot.pinShift
+                    }
+                  ]
 
                   // Plain Behaviors are enough for the list's own moves:
                   // nothing in it feeds a moving height back into its layout.
@@ -4087,7 +4122,8 @@ Item {
                   readonly property bool settled: service.missedShown >= 0.999
                   Behavior on y { enabled: missedSlot.settled; NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                   Behavior on scale { enabled: missedSlot.settled; NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                  Behavior on opacity { enabled: missedSlot.settled; NumberAnimation { duration: 180 } }
+                  // Not for the pile's fade: that follows the scroll exactly.
+                  Behavior on opacity { enabled: missedSlot.settled && missedSlot.pinPast <= 0; NumberAnimation { duration: 180 } }
 
                   Toast {
                     id: missedCard
@@ -4110,7 +4146,6 @@ Item {
                     hoverY: service.missedHoverY - missedSlot.y
                     fontScale: service.fontScale
                     windowBorderWidth: service.windowBorderWidth
-                    cardOpacity: service.windowOpacity
                     actionsAlign: service.actionsAlign
                     now: service.nowTick
                     swipe: {

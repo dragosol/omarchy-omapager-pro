@@ -69,9 +69,6 @@ Item {
   // Hyprland's own border_size when the theme does not set one - that is
   // what the windows are actually drawn with.
   property int windowBorderWidth: 2
-  // The opacity Hyprland draws an unfocused window at, so a card is as
-  // see-through as the windows around it (and the blur behind shows).
-  property real cardOpacity: 1
   readonly property var windowBorderSpec: Border.hyprlandActiveSpec(
       Color.notifications.border, windowBorderWidth)
   // A card underneath the front one of a shut stack is only an edge peeking
@@ -410,28 +407,14 @@ Item {
   // The surface is the shell's own notification surface. BorderSurface keeps
   // gradients and per-side border widths intact; content below is inset by
   // those exact widths so neither measurement nor paint crosses the theme edge.
-  // A card underneath the front one of a shut stack paints only the strip
-  // that peeks out below it. The cut sits a corner radius up, so the front
-  // card's rounded corners have something behind them rather than a notch.
-  readonly property real coveredTop: underneath && place.cover > 0
-      ? Math.max(0, Math.min(place.cover - Style.cornerRadius, body.height)) : 0
-  Item {
+  BorderSurface {
+    id: plate
     x: body.x
-    y: card.coveredTop
     width: body.width
-    height: Math.max(0, body.height - card.coveredTop)
-    clip: card.coveredTop > 0
-
-    BorderSurface {
-      id: plate
-      y: -card.coveredTop
-      width: body.width
-      height: body.height
-      radius: Style.cornerRadius
-      color: Qt.rgba(Color.notifications.background.r, Color.notifications.background.g,
-                     Color.notifications.background.b, Color.notifications.background.a * card.cardOpacity)
-      borderSpec: card.cardBorderSpec
-    }
+    height: body.height
+    radius: Style.cornerRadius
+    color: Color.notifications.background
+    borderSpec: card.cardBorderSpec
   }
 
   // Everything that changes: text, icon and countdown. It stays offscreen-layer
