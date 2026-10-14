@@ -1016,19 +1016,32 @@ Item {
 
     // Optional visual countdown. The expiry clock keeps running when this is
     // disabled, so hiding the animation never makes a notification permanent.
-    BorderSurface {
+    //
+    // Along the bottom, just inside the frame: flush with the inner edge of
+    // the bottom border, and its ends follow the rounded inner corners rather
+    // than poking out past them. It is the bottom band of a rectangle the
+    // shape of the card's inside, cut to the time remaining - a plain clip,
+    // so the ticking costs no mask.
+    Item {
+      id: countdown
+      readonly property real thickness: Math.max(2, Style.spacing.hairline)
+      readonly property real innerWidth: Math.max(0, body.width - card.edgeLeft - card.edgeRight)
+      readonly property real innerHeight: Math.max(0, body.height - card.edgeTop - card.edgeBottom)
       visible: card.showCountdown && card.row.duration > 0 && card.place.front
                && card.remaining > 0 && !card.expanded
-      anchors { left: parent.left; bottom: parent.bottom
-                leftMargin: card.edgeLeft + Style.space(7)
-                bottomMargin: card.edgeBottom }
-      height: Style.spacing.hairline
-      radius: Style.cornerRadius
-      color: card.accentColor
-      borderSpec: Border.none()
-      width: visible ? Math.max(0, (body.width - card.edgeLeft
-                                    - card.edgeRight - Style.space(14))
-                                   * (card.remaining / Math.max(1, card.row.duration))) : 0
+      x: body.x + card.edgeLeft
+      y: body.y + body.height - card.edgeBottom - thickness
+      height: thickness
+      width: visible ? innerWidth * (card.remaining / Math.max(1, card.row.duration)) : 0
+      clip: true
+
+      Rectangle {
+        y: countdown.thickness - height
+        width: countdown.innerWidth
+        height: countdown.innerHeight
+        radius: Math.max(0, Style.cornerRadius - Math.max(card.edgeLeft, card.edgeBottom))
+        color: card.accentColor
+      }
     }
 
     // Clicks on the card. Underneath the card's own content: this covers the
