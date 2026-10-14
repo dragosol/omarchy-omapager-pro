@@ -396,12 +396,16 @@ Item {
   // x/y are not the whole story (the panel moves its slot, and says so here).
   property real trackX: x
   property real trackY: y
+  // Exits that can be seen coming. The panel adds its own (see Service.qml).
+  property bool primeBlur: false
   MotionTrack {
     id: motion
     trackX: card.trackX
     trackY: card.trackY
+    prime: card.primeBlur || card.swipe !== 0
+           || (card.place.front && card.row.duration > 0 && card.remaining > 0 && card.remaining < 600)
   }
-  layer.enabled: motion.active
+  layer.enabled: motion.layered
   layer.smooth: true
   layer.effect: Smear {
     dx: motion.dx * motion.reach / card.scale

@@ -1,9 +1,13 @@
 import QtQuick
 
 // The layer.effect half of the motion blur (see MotionTrack.qml): the layer's
-// texture drawn as `copies` copies stepped back along the frame's movement,
-// each at 1/(i+1) over the ones before it so all of them weigh the same.
-// One copy is the item drawn as it is.
+// texture averaged over `copies` copies stepped back along the frame's
+// movement, in one shader pass (shaders/smear.frag). An item per copy cost a
+// burst of item creation on the first frame of every exit - 2-3 dropped frames
+// right as the card started to leave.
+//
+// The shader is drawn over the card's rectangle grown by the movement, so the
+// trail reaches past the card's own edge.
 Item {
   id: smear
   property variant source
@@ -11,17 +15,17 @@ Item {
   property real dy: 0
   property int copies: 1
 
-  Repeater {
-    model: smear.copies
-    ShaderEffect {
-      required property int index
-      readonly property variant source: smear.source
-      readonly property real back: (smear.copies - 1 - index) / Math.max(1, smear.copies - 1)
-      width: smear.width
-      height: smear.height
-      x: -smear.dx * back
-      y: -smear.dy * back
-      opacity: 1 / (index + 1)
-    }
+  ShaderEffect {
+    readonly property variant source: smear.source
+    x: Math.min(0, -smear.dx)
+    y: Math.min(0, -smear.dy)
+    width: smear.width + Math.abs(smear.dx)
+    height: smear.height + Math.abs(smear.dy)
+    property vector2d boxOrigin: Qt.vector2d(x, y)
+    property vector2d boxSize: Qt.vector2d(width, height)
+    property vector2d itemSize: Qt.vector2d(Math.max(1, smear.width), Math.max(1, smear.height))
+    property vector2d delta: Qt.vector2d(smear.dx, smear.dy)
+    property real count: smear.copies
+    fragmentShader: Qt.resolvedUrl("shaders/smear.frag.qsb")
   }
 }

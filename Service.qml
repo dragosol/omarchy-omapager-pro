@@ -3986,8 +3986,9 @@ Item {
             MotionTrack {
               id: headerMotion
               trackX: (1 - service.missedShown) * missedPanel.away
+              prime: service.missedVisible
             }
-            layer.enabled: headerMotion.active
+            layer.enabled: headerMotion.layered
             layer.smooth: true
             layer.effect: Smear {
               dx: headerMotion.dx * headerMotion.reach
@@ -4204,6 +4205,11 @@ Item {
                     scene: null
                     // The slot moves, not the card: where it is on screen,
                     // for the card's motion blur.
+                    // Open and in view: putting the panel away smears it, so
+                    // its blur is ready before that starts.
+                    primeBlur: service.missedShown >= 0.999 && !service.missedPeeking
+                               && missedSlot.panelY < missedViewport.y + missedViewport.height
+                               && missedSlot.panelY + missedSlot.height > 0
                     // On screen, so the panel's own slide counts: a live card
                     // the panel carries along stays put and is not smeared.
                     trackX: x - missedSlot.away * missedPanel.away + (1 - missedSlot.enter) * missedPanel.away
