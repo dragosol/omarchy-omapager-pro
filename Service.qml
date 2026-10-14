@@ -3939,20 +3939,14 @@ Item {
       Item {
         id: missedPanel
         visible: surface.showingNotifications && service.missedVisible
-        // One translucent layer, like the deck (see clipper) - and smeared
-        // as a whole while it slides in or out, the cards' own motion blur
-        // (Toast.qml) covering only what moves inside it.
+        // One translucent layer, like the deck (see clipper). The panel is
+        // wider than it looks - `away` more on its left, its contents moved
+        // over by as much - because the cards on screen are drawn where the
+        // deck had them while it travels, up to `away` to the left of where
+        // the panel is, and a layer cuts off whatever falls outside the item.
+        // A card that arrived mid-pull, the furthest out, was cut worst.
         opacity: service.windowOpacity
-        MotionTrack {
-          id: panelMotion
-          trackX: (1 - service.missedShown) * missedPanel.away
-        }
-        layer.enabled: service.windowOpacity < 0.999 || panelMotion.active
-        layer.effect: Smear {
-          dx: panelMotion.dx * panelMotion.reach
-          dy: 0
-          copies: panelMotion.copies
-        }
+        layer.enabled: service.windowOpacity < 0.999
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
@@ -3962,8 +3956,9 @@ Item {
         // The gap is kept where it belongs - under the last card, once you
         // have scrolled to the end.
         anchors.bottomMargin: 0
-        width: clipper.width
-        readonly property real away: width + Style.space(24)
+        readonly property real span: clipper.width
+        readonly property real away: span + Style.space(24)
+        width: span + away
         transform: Translate { x: (1 - service.missedShown) * missedPanel.away }
         // How far the panel is in, eased for fading: what is new to the
         // screen fades in with it; the live cards are already there and only
@@ -3972,7 +3967,7 @@ Item {
 
         Item {
           id: missedBody
-          x: clipper.deckX
+          x: missedPanel.away + clipper.deckX
           width: service.notificationWidth
           // Down to the bottom of the screen whenever there is more than fits;
           // only as tall as its cards when there is not, so the empty strip
@@ -3987,6 +3982,17 @@ Item {
             id: missedHeader
             // Above the list: cards scrolled up go under it, into the pile.
             z: 2
+            // Smeared as the panel slides, like the cards (MotionTrack.qml).
+            MotionTrack {
+              id: headerMotion
+              trackX: (1 - service.missedShown) * missedPanel.away
+            }
+            layer.enabled: headerMotion.active
+            layer.smooth: true
+            layer.effect: Smear {
+              dx: headerMotion.dx * headerMotion.reach
+              copies: headerMotion.copies
+            }
             opacity: service.missedPeeking ? 1 : missedPanel.fadeIn
             width: parent.width
             height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
@@ -4198,7 +4204,10 @@ Item {
                     scene: null
                     // The slot moves, not the card: where it is on screen,
                     // for the card's motion blur.
+                    // On screen, so the panel's own slide counts: a live card
+                    // the panel carries along stays put and is not smeared.
                     trackX: x - missedSlot.away * missedPanel.away + (1 - missedSlot.enter) * missedPanel.away
+                            + (1 - service.missedShown) * missedPanel.away
                     trackY: missedSlot.y - service.missedScroll + missedSlot.pinShift
                             + missedSlot.away * (missedSlot.deckY - missedSlot.panelY)
                     cardWidth: missedSlot.width
