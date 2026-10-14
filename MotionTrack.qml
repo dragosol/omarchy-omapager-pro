@@ -1,6 +1,6 @@
 import QtQuick
 
-// Motion blur, as hyprdrive does it: how far something moved in the last
+// Motion blur, as hyprdrive does it, for things leaving: how far something moved in the last
 // frame, and how many copies it takes to smear that distance with the copies
 // at most 2 device pixels apart - so the smear reads as a blur, never as
 // separate ghosts. Feed it a position (trackX/trackY); it runs only while
@@ -24,7 +24,12 @@ Item {
   // dropped frame, a fast throw) gets a shorter smear, never wider gaps.
   readonly property real reach: length <= 0 ? 0
       : Math.min(1, (copies - 1) * 2 / Screen.devicePixelRatio / length)
-  readonly property bool active: copies > 1
+  // Only on the way out. Everything that leaves goes right, into the screen
+  // edge - a card thrown away, a card timing out, the panel being put away -
+  // and nothing that arrives or rearranges does: arrivals drop in, stacks
+  // open downwards, the panel comes in leftwards, lists scroll. So only
+  // rightward movement is smeared; the rest is drawn sharp.
+  readonly property bool active: copies > 1 && dx > 0 && dx >= Math.abs(dy)
 
   function note() {
     if (moving) return
