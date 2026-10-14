@@ -15,6 +15,7 @@ import qs.Ui
 
 import "Markup.js" as Markup
 import "Security.js" as Security
+import "ReplyEdit.js" as ReplyEdit
 
 Item {
   id: card
@@ -386,9 +387,28 @@ Item {
   y: scene ? scene.at(row.key, "y") : 0
   z: place.z
   scale: scene ? scene.at(row.key, "scale") : 1
-  x: swipe
+  x: swipe + (scene ? scene.at(row.key, "x") : 0)
   opacity: place.hidden ? 0 : (scene ? scene.at(row.key, "opacity") : 1) * swipeFade
   transformOrigin: Item.Top
+
+  // ---- Motion blur, as hyprdrive does it (MotionTrack.qml, Smear.qml) ---
+  // trackX/trackY are where the card is on screen, for the cards whose own
+  // x/y are not the whole story (the panel moves its slot, and says so here).
+  property real trackX: x
+  property real trackY: y
+  MotionTrack {
+    id: motion
+    trackX: card.trackX
+    trackY: card.trackY
+  }
+  layer.enabled: motion.active
+  layer.smooth: true
+  layer.effect: Smear {
+    dx: motion.dx * motion.reach / card.scale
+    dy: motion.dy * motion.reach / card.scale
+    copies: motion.copies
+  }
+
 
   // `visible` is deliberately not bound to anything. It used to be
   // `opacity > 0.01`, and that closed a circle: toggling visible changes what
@@ -865,21 +885,36 @@ Item {
                             + (sendButton.visible && !sendButton.isRtl
                                ? sendButton.width + Style.spacing.controlGap : 0)
               placeholderText: card.replyError || ("Reply to " + String(card.row.replyTo || card.row.summary || ""))
-              onAccepted: { card.replySent(text); text = "" }
-              Keys.onEscapePressed: { text = ""; card.replyCancelled() }
-
               // Qt's own paste reads whatever another app offers, to the end,
               // however much that is - into the shell every panel runs in.
               // So the field has no paste of its own: not the keys, not the
               // middle button's primary selection, not the context menu. A
               // paste goes through boundedPaste instead, which stops reading
               // at a reply's worth of text.
+              //
+              // Nor may it watch the clipboard. An editable TextInput listens
+              // for every clipboard change and asks for the new contents to
+              // decide whether it could paste (QQuickTextInput::
+              // q_canPasteChanged) - a read of foreign data with no limit,
+              // whether or not anyone pastes, for as long as the field
+              // exists. A read-only one skips that. So the field is read-only
+              // to Qt and the typing is done here: characters, Backspace and
+              // Delete (by word with Ctrl), cut, select-all, Enter, Escape.
+              // Cursor movement and selection are still Qt's own.
+              readOnly: true
+              cursorVisible: activeFocus
               QQC.ContextMenu.menu: null
               Keys.onPressed: function(event) {
-                if (event.matches(StandardKey.Paste)) {
-                  event.accepted = true
-                  boundedPaste.start()
-                }
+                event.accepted = ReplyEdit.key(replyInput, event, {
+                  paste: function() { boundedPaste.start() },
+                  send: function(t) { card.replySent(t); replyInput.text = "" },
+                  cancel: function() { replyInput.text = ""; card.replyCancelled() }
+                }, { paste: StandardKey.Paste, selectAll: StandardKey.SelectAll, cut: StandardKey.Cut })
+              }
+              // A read-only field does not take focus on a click by itself.
+              TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: replyInput.forceActiveFocus()
               }
               MouseArea {
                 anchors.fill: parent

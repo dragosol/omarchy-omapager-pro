@@ -2137,10 +2137,24 @@ Item {
     var target = placements[key]
     if (!target) return 0
     var to = target[what]
+    // Only a leaving card has a sideways place; every other card is at 0.
+    if (what === "x" && to === undefined) to = 0
     if (t >= 1) return to
     var from = was[key]
-    if (!from || from[what] === undefined) return to
+    if (!from || from[what] === undefined) return what === "x" ? to * t : to
     return from[what] + (to - from[what]) * t
+  }
+
+  // A card that timed out slides off whole, so the deck's clip cannot close
+  // over it the way it does over one fading in place: it keeps room down to
+  // the bottom of whatever is still sliding.
+  readonly property real slideRoom: {
+    var m = 0
+    for (var k in leaving) {
+      if (leaving[k] !== "expired" || !placements[k]) continue
+      m = Math.max(m, placements[k].y + placements[k].height)
+    }
+    return m
   }
 
   readonly property real deckHeight: t >= 1 ? layout.height
@@ -2156,7 +2170,7 @@ Item {
   function snapshot() {
     var snap = {}
     for (var key in placements)
-      snap[key] = { y: at(key, "y"), scale: at(key, "scale"),
+      snap[key] = { y: at(key, "y"), scale: at(key, "scale"), x: at(key, "x"),
                     opacity: at(key, "opacity"), height: at(key, "height"),
                     size: placements[key].size,
                     z: placements[key].z, front: placements[key].front }
@@ -2193,8 +2207,13 @@ Item {
 
   // Where a leaving card sits while it fades: exactly where it was. The others
   // close over it in the same move.
+  //
+  // Except one that timed out: that slides back into the edge it came from,
+  // whole, the way it would have been thrown - nobody dismissed it, so it is
+  // put away rather than made to vanish.
   function restingPlace(key) {
     var prev = was[key]
+    var slides = leaving[key] === "expired"
     // front: true so it keeps its text on the way out. A card behind the front
     // one in a collapsed deck draws no content - correct while it is a peek of
     // an edge, wrong for one that is fading in place, which blanked itself for
@@ -2204,7 +2223,9 @@ Item {
     // front of the card it had been hiding behind. It keeps its depth -
     // just under whatever slides into its slot - and stays a blank edge.
     var behind = prev && prev.front === false
-    return { y: prev ? prev.y : 0, scale: prev ? prev.scale : 1, opacity: 0,
+    return { y: prev ? prev.y : 0, scale: prev ? prev.scale : 1,
+             opacity: slides ? (prev && prev.opacity !== undefined ? prev.opacity : 1) : 0,
+             x: slides ? notificationWidth + Style.space(24) : 0,
              height: prev ? prev.height : 0,
              z: behind && prev.z !== undefined ? prev.z - 0.5 : 2000,
              front: !behind,
@@ -3675,7 +3696,7 @@ Item {
         // From the same clock as everything on it, so the clip and its
         // contents can never disagree mid-move - and never taller than the
         // screen. Past that the cards scroll inside it.
-        height: Math.min(service.deckHeight, service.deckRoom)
+        height: Math.min(Math.max(service.deckHeight, service.slideRoom), service.deckRoom)
 
         // What this output can show below the bar, for the scroll limit.
         // Only the surface actually showing the deck gets a say.
@@ -3918,9 +3939,20 @@ Item {
       Item {
         id: missedPanel
         visible: surface.showingNotifications && service.missedVisible
-        // One translucent layer, like the deck (see clipper).
+        // One translucent layer, like the deck (see clipper) - and smeared
+        // as a whole while it slides in or out, the cards' own motion blur
+        // (Toast.qml) covering only what moves inside it.
         opacity: service.windowOpacity
-        layer.enabled: service.windowOpacity < 0.999
+        MotionTrack {
+          id: panelMotion
+          trackX: (1 - service.missedShown) * missedPanel.away
+        }
+        layer.enabled: service.windowOpacity < 0.999 || panelMotion.active
+        layer.effect: Smear {
+          dx: panelMotion.dx * panelMotion.reach
+          dy: 0
+          copies: panelMotion.copies
+        }
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
@@ -4164,6 +4196,11 @@ Item {
                     id: missedCard
                     row: missedSlot.model
                     scene: null
+                    // The slot moves, not the card: where it is on screen,
+                    // for the card's motion blur.
+                    trackX: x - missedSlot.away * missedPanel.away + (1 - missedSlot.enter) * missedPanel.away
+                    trackY: missedSlot.y - service.missedScroll + missedSlot.pinShift
+                            + missedSlot.away * (missedSlot.deckY - missedSlot.panelY)
                     cardWidth: missedSlot.width
                     place: missedSlot.place
                     expanded: service.missedOpenDeck !== ""

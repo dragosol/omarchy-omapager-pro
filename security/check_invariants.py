@@ -42,6 +42,18 @@ for helper in ('store','icon','kdeconnect'):
 # Omapager Pro runs the sender's default action on a click by default, as
 # Omarchy's own notification service does; what must hold is that it stays a
 # setting, and that nothing but a click invokes it.
+# An editable Qt text input reads every clipboard change to update canPaste
+# (QQuickTextInput::q_canPasteChanged) - foreign data of any size, no paste
+# needed. Every text input in the shell-side QML must be read-only to Qt;
+# the reply field types through ReplyEdit.js instead.
+for qml in ROOT.glob('*.qml'):
+    src=qml.read_text()
+    for m in re.finditer(r'\b(TextField|TextInput|TextEdit|TextArea)\s*\{',src):
+        depth,i=1,m.end()
+        while depth and i<len(src):
+            depth+={'{':1,'}':-1}.get(src[i],0);i+=1
+        if not re.search(r'^\s*readOnly:\s*true\b',src[m.end():i],re.M):
+            errors.append(f'{qml.name}: editable {m.group(1)} watches the clipboard (needs readOnly: true)')
 if 'property bool allowDefaultActionOnCardClick:' not in service:errors.append('default action is no longer a setting')
 if 'if (allowDefaultActionOnCardClick && ref && ref.actions)' not in service:errors.append('default action no longer gated by its setting')
 if errors:raise SystemExit('\n'.join(errors))
