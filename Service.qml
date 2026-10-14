@@ -3031,44 +3031,55 @@ Item {
     // wl-copy copies whatever it is given on stdin when no value is passed as an argument.
     // A verification code handed over as an argument would sit in /proc/<pid>/cmdline, which
     // --sensitive does nothing about: that flag only asks clipboard managers not to keep it.
-    var args = ["wl-copy"]
-    if (sensitive) args.push("--sensitive")
-    clipProc.running = false
-    clipProc.command = args
-    clipProc.stdinEnabled = true
-    clipProc.running = true
-    clipProc.write(value)
-    clipProc.stdinEnabled = false
+    var proc = sensitive ? secretProc : clipProc
+    secretLife.stop()
+    secretProc.running = false
+    secretHeld = ""
+    proc.running = false
+    proc.command = sensitive ? ["wl-copy", "--foreground", "--sensitive"] : ["wl-copy"]
+    proc.stdinEnabled = true
+    proc.running = true
+    proc.write(value)
+    proc.stdinEnabled = false
     if (sensitive) { secretHeld = value; secretLife.restart() }
+  }
+
+  // The code stays on the clipboard only as long as this process owns it.
+  // --foreground keeps wl-copy here instead of forking, and wl-copy exits the
+  // moment anything else is copied - so "is the code still what is on the
+  // clipboard?" is "is this still running?", answered without ever reading
+  // the clipboard. Reading it meant taking whatever another app put there, of
+  // any size, into the shell's own memory.
+  Process {
+    id: secretProc
+    running: false
+    onExited: {
+      // A restart for a newer code reports the old one's exit late; that one
+      // is still running and owns the clipboard.
+      if (!service.hasWlCopy || secretProc.running) return
+      secretLife.stop()
+      service.secretHeld = ""
+    }
   }
 
   Timer {
     id: secretLife
     interval: service.clipboardTimeout * 1000
     onTriggered: {
-      if (service.hasWlCopy) { clipReader.running = true; return }
-      if (service.secretHeld && Quickshell.clipboardText === service.secretHeld)
-        Quickshell.clipboardText = ""
-      service.secretHeld = ""
-    }
-  }
-
-  // Only clear it if it is still the thing on the clipboard: taking away
-  // something the person copied afterwards would be its own small betrayal.
-  Process {
-    id: clipReader
-    running: false
-    command: ["wl-paste", "--no-newline"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        if (String(text) === service.secretHeld && service.secretHeld) {
+      if (service.hasWlCopy) {
+        // Still ours: clear it. Ours no longer: leave what was copied since.
+        if (secretProc.running) {
           clipProc.running = false
           clipProc.command = ["wl-copy", "--clear"]
           clipProc.running = true
         }
-        service.secretHeld = ""
+      } else if (service.secretHeld) {
+        // Without wl-copy, Qt holds the selection and QML cannot ask whether
+        // it still does. Comparing would mean reading a foreign selection of
+        // any size, so the code is cleared on time either way.
+        Quickshell.clipboardText = ""
       }
+      service.secretHeld = ""
     }
   }
 

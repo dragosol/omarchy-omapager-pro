@@ -6,7 +6,9 @@
 
 import QtQuick
 import QtQuick.Effects
+import QtQuick.Controls as QQC
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 
 import qs.Ui
@@ -865,6 +867,59 @@ Item {
               placeholderText: card.replyError || ("Reply to " + String(card.row.replyTo || card.row.summary || ""))
               onAccepted: { card.replySent(text); text = "" }
               Keys.onEscapePressed: { text = ""; card.replyCancelled() }
+
+              // Qt's own paste reads whatever another app offers, to the end,
+              // however much that is - into the shell every panel runs in.
+              // So the field has no paste of its own: not the keys, not the
+              // middle button's primary selection, not the context menu. A
+              // paste goes through boundedPaste instead, which stops reading
+              // at a reply's worth of text.
+              QQC.ContextMenu.menu: null
+              Keys.onPressed: function(event) {
+                if (event.matches(StandardKey.Paste)) {
+                  event.accepted = true
+                  boundedPaste.start()
+                }
+              }
+              MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.MiddleButton
+                onPressed: function(mouse) { mouse.accepted = true }
+              }
+
+              Process {
+                id: boundedPaste
+                readonly property int limit: 4096
+                property string got: ""
+                property bool over: false
+                function start() {
+                  if (running) return
+                  got = ""
+                  over = false
+                  running = true
+                }
+                command: ["wl-paste", "--no-newline", "--type", "text/plain;charset=utf-8"]
+                stdout: SplitParser {
+                  splitMarker: ""
+                  onRead: function(data) {
+                    if (boundedPaste.over) return
+                    boundedPaste.got += data
+                    if (boundedPaste.got.length > boundedPaste.limit) {
+                      boundedPaste.over = true
+                      boundedPaste.got = boundedPaste.got.slice(0, boundedPaste.limit)
+                      boundedPaste.running = false
+                    }
+                  }
+                }
+                onExited: {
+                  var t = got
+                  got = ""
+                  if (!t) return
+                  if (replyInput.selectedText.length > 0)
+                    replyInput.remove(replyInput.selectionStart, replyInput.selectionEnd)
+                  replyInput.insert(replyInput.cursorPosition, t)
+                }
+              }
 
               // Enter sends, but an affordance nobody can see is not one.
               // Sits at the trailing edge of the field. When the first
