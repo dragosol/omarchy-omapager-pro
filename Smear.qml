@@ -1,22 +1,50 @@
 import QtQuick
 
-// The layer.effect half of the motion blur (see MotionTrack.qml): the layer's
-// texture averaged over `copies` copies stepped back along the frame's
-// movement, in one shader pass (shaders/smear.frag). An item per copy cost a
-// burst of item creation on the first frame of every exit - 2-3 dropped frames
-// right as the card started to leave.
+// The drawing half of the motion blur (see MotionTrack.qml): `face` averaged
+// over `copies` copies stepped back along the frame's movement, in one shader
+// pass (shaders/smear.frag). An item per copy cost a burst of item creation on
+// the first frame of every exit - 2-3 dropped frames right as the card started
+// to leave.
 //
-// The shader is drawn over the card's rectangle grown by the movement, so the
-// trail reaches past the card's own edge.
+// Beside the item, not its layer. A layer stands in for the item the whole
+// time it is on, and drawing a texture back at a fractional scale (1.6 here)
+// resamples it: a primed card or heading sat there with a soft, uneven border
+// - a step along the top edge, a heavy corner - before anything moved. Here
+// the texture is kept warm while primed (`armed`), but the item goes on
+// drawing itself, sharp, and is swapped for the smear only while it moves
+// (`active`).
+//
+// Placed over `face`, in the same parent. The texture leaves out the face's
+// own opacity, so the smear takes it over.
 Item {
   id: smear
-  property variant source
-  property real dx: 0          // in this item's own (unscaled) pixels
+  required property Item face
+  property bool armed: false
+  property bool active: false
+  property real dx: 0          // in the face's own (unscaled) pixels
   property real dy: 0
   property int copies: 1
 
+  x: face.x
+  y: face.y
+  z: face.z
+  width: face.width
+  height: face.height
+  opacity: face.opacity
+
+  ShaderEffectSource {
+    id: texture
+    sourceItem: smear.armed || smear.active ? smear.face : null
+    hideSource: smear.active
+    visible: false
+  }
+
+  // The trail reaches past the face's own edge: drawn over its rectangle
+  // grown by the movement. Opacity 0, not invisible, while it waits, so the
+  // switch at the start of an exit only changes a number.
   ShaderEffect {
-    readonly property variant source: smear.source
+    readonly property variant source: texture
+    opacity: smear.active ? 1 : 0
     x: Math.min(0, -smear.dx)
     y: Math.min(0, -smear.dy)
     width: smear.width + Math.abs(smear.dx)

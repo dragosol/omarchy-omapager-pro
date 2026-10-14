@@ -405,14 +405,6 @@ Item {
     prime: card.primeBlur || card.swipe !== 0
            || (card.place.front && card.row.duration > 0 && card.remaining > 0 && card.remaining < 600)
   }
-  layer.enabled: motion.layered
-  layer.smooth: true
-  layer.effect: Smear {
-    dx: motion.dx * motion.reach / card.scale
-    dy: motion.dy * motion.reach / card.scale
-    copies: motion.copies
-  }
-
 
   // `visible` is deliberately not bound to anything. It used to be
   // `opacity > 0.01`, and that closed a circle: toggling visible changes what
@@ -430,684 +422,707 @@ Item {
   // its own without being part of any measurement.
   enabled: !place.hidden
 
-  // The surface is the shell's own notification surface. BorderSurface keeps
-  // gradients and per-side border widths intact; content below is inset by
-  // those exact widths so neither measurement nor paint crosses the theme edge.
-  BorderSurface {
-    id: plate
-    x: body.x
-    width: body.width
-    height: body.height
-    radius: Style.cornerRadius
-    color: Color.notifications.background
-    borderSpec: card.cardBorderSpec
-  }
-
-  // Everything that changes: text, icon and countdown. It stays offscreen-layer
-  // free so the ticking countdown does not force a cached card repaint.
+  // What the card draws, kept apart from the card itself so the smear below
+  // can sample it (Smear.qml).
   Item {
-    id: body
-    x: 0
-    width: parent.width
-    height: card.drawnHeight
+    id: cardFace
+    width: card.width
+    height: card.height
 
-    Row {
-      id: layout
-      // Anchored to the top, not centred. A card grows downwards when its
-      // buttons or its reply field appear, and content hung off the centre
-      // line slides up by half of whatever was added - so the words move while
-      // you are reading them.
-      anchors { left: parent.left; right: parent.right; top: parent.top
-                leftMargin: card.edgeLeft + Style.space(12)
-                rightMargin: card.edgeRight + Style.space(12)
-                topMargin: card.edgeTop + card.contentPaddingY }
-      spacing: Style.space(12)
+    // The surface is the shell's own notification surface. BorderSurface keeps
+    // gradients and per-side border widths intact; content below is inset by
+    // those exact widths so neither measurement nor paint crosses the theme edge.
+    BorderSurface {
+      id: plate
+      x: body.x
+      width: body.width
+      height: body.height
+      radius: Style.cornerRadius
+      color: Color.notifications.background
+      borderSpec: plateRing.surfaceSpec
 
-      // Every notification gets a mark, whether or not the sender sent one:
-      // the sender's image, else its themed icon, else the first letter of
-      // wherever it came from. A card with a hole where the icon should be
-      // reads as broken rather than as minimal.
-      Item {
-        id: thumb
-        width: Style.space(32)
-        height: width
-        // Centred against the text beside it: pinned to the top, it floats
-        // above nothing on a two-line card. Against the *text*, not against the
-        // column - the column grows when the buttons or the reply field open,
-        // and centring on that walked the icon down every time you hovered.
-        // The one fixed thing on the card should be fixed.
-        y: Math.max(0, (card.restingBlock - height) / 2)
-        opacity: card.showsContent ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: card.fade } }
-
-        readonly property bool mono: String(picture.source).indexOf("-mono.png") >= 0
-
-        function asUrl(src) {
-          var value = String(src || "")
-          if (!value) return ""
-          return value.indexOf("file://") === 0 || value.indexOf("image://") === 0
-                 ? value : "file://" + value
-        }
-
-        // What the sender handed over, and what omapager-icon resolved for
-        // this source. Nothing else: Quickshell.iconPath happily returns a
-        // provider URL for an icon that does not exist, and that draws as a
-        // checkerboard.
-        readonly property string sent: /^image:\/\/qsimage\/[0-9]+\/[0-9]+$/.test(String(card.row.image || ""))
-                                       ? String(card.row.image) : card.senderImage
-        readonly property string resolved: asUrl(card.row.stored_image)
-
-        // The sender's own picture wins while it works - for a message
-        // forwarded from a phone that is often the contact's photo, which
-        // beats any app icon. When it will not draw, the resolved one takes
-        // over rather than the card falling back to a letter.
-        property bool sentFailed: false
-        onSentChanged: sentFailed = false
-        readonly property string best: (sent && !sentFailed) ? sent : resolved
-
-        BorderSurface {
-          anchors.fill: parent
-          radius: Style.cornerRadius
-          visible: picture.status !== Image.Ready
-          color: card.softFill
-          borderSpec: card.flat
-
-          Text {
-            textFormat: Text.PlainText
-            anchors.centerIn: parent
-            text: String(card.row.source || card.row.app || "?").substring(0, 1).toUpperCase()
-            color: card.dimColor
-            font.family: Style.font.family
-            font.pixelSize: Style.font.body * card.fontScale
-            font.weight: Font.DemiBold
-          }
-        }
-
-        // A one-colour glyph is painted in the theme's text colour rather
-        // than drawn as it came, or a dark mark disappears into a dark card.
-        Rectangle {
-          anchors.fill: parent
-          visible: thumb.mono && picture.status === Image.Ready
-          color: Color.notifications.text
-          opacity: 0.85
-          layer.enabled: visible
-          layer.effect: MultiEffect { maskEnabled: true; maskSource: picture }
-        }
-
-        Image {
-          id: picture
-          anchors.fill: parent
-          visible: status === Image.Ready && !thumb.mono
-          source: thumb.best
-          onStatusChanged: if (status === Image.Error && source == thumb.sent) thumb.sentFailed = true
-          fillMode: Image.PreserveAspectCrop
-          sourceSize.width: thumb.width * Screen.devicePixelRatio
-          sourceSize.height: thumb.height * Screen.devicePixelRatio
-          layer.enabled: visible
-          layer.effect: MultiEffect { maskEnabled: true; maskSource: mask }
-        }
-
-        Rectangle {
-          id: mask
-          anchors.fill: parent
-          visible: false
-          layer.enabled: true
-          radius: Style.cornerRadius
-          color: "black"
-        }
+      Ring {
+        id: plateRing
+        spec: card.cardBorderSpec
+        radius: plate.radius
       }
+    }
 
-      Column {
-        id: column
-        width: layout.width - thumb.width - layout.spacing
-        spacing: Style.space(3)
+    // Everything that changes: text, icon and countdown. It stays offscreen-layer
+    // free so the ticking countdown does not force a cached card repaint.
+    Item {
+      id: body
+      x: 0
+      width: parent.width
+      height: card.drawnHeight
 
-        // Title, then how many this one stands for, then when it arrived.
-        // The sender's name used to sit above this; it says "notify-send" more
-        // often than it says anything useful, so it now only picks the icon.
+      Row {
+        id: layout
+        // Anchored to the top, not centred. A card grows downwards when its
+        // buttons or its reply field appear, and content hung off the centre
+        // line slides up by half of whatever was added - so the words move while
+        // you are reading them.
+        anchors { left: parent.left; right: parent.right; top: parent.top
+                  leftMargin: card.edgeLeft + Style.space(12)
+                  rightMargin: card.edgeRight + Style.space(12)
+                  topMargin: card.edgeTop + card.contentPaddingY }
+        spacing: Style.space(12)
+
+        // Every notification gets a mark, whether or not the sender sent one:
+        // the sender's image, else its themed icon, else the first letter of
+        // wherever it came from. A card with a hole where the icon should be
+        // reads as broken rather than as minimal.
         Item {
-          id: headline
-          width: parent.width
-          height: Math.max(title.implicitHeight, rightSide.height,
-                           badge.visible ? badge.height : 0)
+          id: thumb
+          width: Style.space(32)
+          height: width
+          // Centred against the text beside it: pinned to the top, it floats
+          // above nothing on a two-line card. Against the *text*, not against the
+          // column - the column grows when the buttons or the reply field open,
+          // and centring on that walked the icon down every time you hovered.
+          // The one fixed thing on the card should be fixed.
+          y: Math.max(0, (card.restingBlock - height) / 2)
           opacity: card.showsContent ? 1 : 0
           Behavior on opacity { NumberAnimation { duration: card.fade } }
 
-          Text {
-            textFormat: Text.PlainText
-            id: title
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            width: Math.max(1, parent.width - rightSide.width
-                   - (badge.visible ? badge.width + Style.space(6) : 0)
-                   - (titleMarks.visible ? titleMarks.width + Style.space(7) : 0)
-                   - Style.space(8))
-            text: String(card.row.summary || "")
-            color: card.critical ? Color.urgent : Color.notifications.text
-            font.family: "Liberation Sans"
-            font.pixelSize: Style.font.title * card.fontScale
-            // Regular weight. The title is already the brightest thing on the
-            // card; bold on top of that made every card shout its headline.
-            // Larger fonts should wrap the summary, not hide it after a few words.
-            // Bound unusually long titles just as we bound the message body.
-            wrapMode: Text.Wrap
-            maximumLineCount: card.bodyOpen ? 8 : 3
-            elide: Text.ElideRight
+          readonly property bool mono: String(picture.source).indexOf("-mono.png") >= 0
+
+          function asUrl(src) {
+            var value = String(src || "")
+            if (!value) return ""
+            return value.indexOf("file://") === 0 || value.indexOf("image://") === 0
+                   ? value : "file://" + value
           }
 
-          // Straight after the title, at the title's size and in the theme's
-          // foreground. No chip: tried as an inverted pill beside the time and
-          // as a badge on the corner of the app icon, and both read as heavy -
-          // the badge version also stacked leftwards off the icon as soon as a
-          // card had more than one thing to offer, which is the normal case.
-          // As glyphs on the headline they are part of the sentence.
-          Row {
-            id: titleMarks
-            visible: card.marks.length > 0
-            anchors.verticalCenter: title.verticalCenter
-            x: title.x + Math.min(title.implicitWidth, title.width) + Style.space(7)
-            spacing: Style.space(5)
+          // What the sender handed over, and what omapager-icon resolved for
+          // this source. Nothing else: Quickshell.iconPath happily returns a
+          // provider URL for an icon that does not exist, and that draws as a
+          // checkerboard.
+          readonly property string sent: /^image:\/\/qsimage\/[0-9]+\/[0-9]+$/.test(String(card.row.image || ""))
+                                         ? String(card.row.image) : card.senderImage
+          readonly property string resolved: asUrl(card.row.stored_image)
 
-            Repeater {
-              model: card.marks
-              Text {
-                textFormat: Text.PlainText
-                required property var modelData
-                text: modelData
-                color: Color.notifications.text
-                opacity: 0.9
-                font.family: Style.font.family
-                font.pixelSize: Style.font.body * card.fontScale
-              }
-            }
-          }
+          // The sender's own picture wins while it works - for a message
+          // forwarded from a phone that is often the contact's photo, which
+          // beats any app icon. When it will not draw, the resolved one takes
+          // over rather than the card falling back to a letter.
+          property bool sentFailed: false
+          onSentChanged: sentFailed = false
+          readonly property string best: (sent && !sentFailed) ? sent : resolved
 
           BorderSurface {
-            id: badge
-            // The row, not the time inside it: anchoring across into another
-            // item's children is not a sibling relationship and Qt refuses it.
-            anchors.right: rightSide.left
-            anchors.rightMargin: Style.space(6)
-            anchors.verticalCenter: title.verticalCenter
-            visible: card.stands > 1
-            readonly property var badgeBorderSpec: card.flat
-            width: badgeText.implicitWidth + Style.spacing.sm * 2
-                   + Border.left(badgeBorderSpec) + Border.right(badgeBorderSpec)
-            height: badgeText.implicitHeight + Style.spacing.xxs * 2
-                    + Border.top(badgeBorderSpec) + Border.bottom(badgeBorderSpec)
+            anchors.fill: parent
             radius: Style.cornerRadius
+            visible: picture.status !== Image.Ready
             color: card.softFill
-            borderSpec: badgeBorderSpec
+            borderSpec: card.flat
 
             Text {
               textFormat: Text.PlainText
-              id: badgeText
               anchors.centerIn: parent
-              text: String(card.stands)
+              text: String(card.row.source || card.row.app || "?").substring(0, 1).toUpperCase()
               color: card.dimColor
               font.family: Style.font.family
-              font.pixelSize: Style.font.caption * card.fontScale
+              font.pixelSize: Style.font.body * card.fontScale
+              font.weight: Font.DemiBold
             }
           }
 
-          // Timestamp and dismiss action share one stable slot, so hover can
-          // crossfade between them without moving the headline.
-          Row {
-            id: rightSide
-            anchors.right: parent.right
-            anchors.verticalCenter: title.verticalCenter
-            spacing: Style.space(5)
+          // A one-colour glyph is painted in the theme's text colour rather
+          // than drawn as it came, or a dark mark disappears into a dark card.
+          Rectangle {
+            anchors.fill: parent
+            visible: thumb.mono && picture.status === Image.Ready
+            color: Color.notifications.text
+            opacity: 0.85
+            layer.enabled: visible
+            layer.effect: MultiEffect { maskEnabled: true; maskSource: picture }
+          }
 
-            // The time and the close control occupy the same square. Hover
-            // crossfades between them rather than sliding the time aside: one
-            // thing changing into another reads as a single control, and
-            // nothing has to move to make room.
-            Item {
-              width: Math.max(stamp.implicitWidth, shut.implicitWidth)
-              height: Math.max(stamp.implicitHeight, shut.implicitHeight)
+          Image {
+            id: picture
+            anchors.fill: parent
+            visible: status === Image.Ready && !thumb.mono
+            source: thumb.best
+            onStatusChanged: if (status === Image.Error && source == thumb.sent) thumb.sentFailed = true
+            fillMode: Image.PreserveAspectCrop
+            sourceSize.width: thumb.width * Screen.devicePixelRatio
+            sourceSize.height: thumb.height * Screen.devicePixelRatio
+            layer.enabled: visible
+            layer.effect: MultiEffect { maskEnabled: true; maskSource: mask }
+          }
+
+          Rectangle {
+            id: mask
+            anchors.fill: parent
+            visible: false
+            layer.enabled: true
+            radius: Style.cornerRadius
+            color: "black"
+          }
+        }
+
+        Column {
+          id: column
+          width: layout.width - thumb.width - layout.spacing
+          spacing: Style.space(3)
+
+          // Title, then how many this one stands for, then when it arrived.
+          // The sender's name used to sit above this; it says "notify-send" more
+          // often than it says anything useful, so it now only picks the icon.
+          Item {
+            id: headline
+            width: parent.width
+            height: Math.max(title.implicitHeight, rightSide.height,
+                             badge.visible ? badge.height : 0)
+            opacity: card.showsContent ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: card.fade } }
+
+            Text {
+              textFormat: Text.PlainText
+              id: title
+              anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
+              width: Math.max(1, parent.width - rightSide.width
+                     - (badge.visible ? badge.width + Style.space(6) : 0)
+                     - (titleMarks.visible ? titleMarks.width + Style.space(7) : 0)
+                     - Style.space(8))
+              text: String(card.row.summary || "")
+              color: card.critical ? Color.urgent : Color.notifications.text
+              font.family: "Liberation Sans"
+              font.pixelSize: Style.font.title * card.fontScale
+              // Regular weight. The title is already the brightest thing on the
+              // card; bold on top of that made every card shout its headline.
+              // Larger fonts should wrap the summary, not hide it after a few words.
+              // Bound unusually long titles just as we bound the message body.
+              wrapMode: Text.Wrap
+              maximumLineCount: card.bodyOpen ? 8 : 3
+              elide: Text.ElideRight
+            }
+
+            // Straight after the title, at the title's size and in the theme's
+            // foreground. No chip: tried as an inverted pill beside the time and
+            // as a badge on the corner of the app icon, and both read as heavy -
+            // the badge version also stacked leftwards off the icon as soon as a
+            // card had more than one thing to offer, which is the normal case.
+            // As glyphs on the headline they are part of the sentence.
+            Row {
+              id: titleMarks
+              visible: card.marks.length > 0
+              anchors.verticalCenter: title.verticalCenter
+              x: title.x + Math.min(title.implicitWidth, title.width) + Style.space(7)
+              spacing: Style.space(5)
+
+              Repeater {
+                model: card.marks
+                Text {
+                  textFormat: Text.PlainText
+                  required property var modelData
+                  text: modelData
+                  color: Color.notifications.text
+                  opacity: 0.9
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body * card.fontScale
+                }
+              }
+            }
+
+            BorderSurface {
+              id: badge
+              // The row, not the time inside it: anchoring across into another
+              // item's children is not a sibling relationship and Qt refuses it.
+              anchors.right: rightSide.left
+              anchors.rightMargin: Style.space(6)
+              anchors.verticalCenter: title.verticalCenter
+              visible: card.stands > 1
+              readonly property var badgeBorderSpec: card.flat
+              width: badgeText.implicitWidth + Style.spacing.sm * 2
+                     + Border.left(badgeBorderSpec) + Border.right(badgeBorderSpec)
+              height: badgeText.implicitHeight + Style.spacing.xxs * 2
+                      + Border.top(badgeBorderSpec) + Border.bottom(badgeBorderSpec)
+              radius: Style.cornerRadius
+              color: card.softFill
+              borderSpec: badgeBorderSpec
 
               Text {
                 textFormat: Text.PlainText
-                id: stamp
+                id: badgeText
                 anchors.centerIn: parent
-                text: card.ago()
+                text: String(card.stands)
                 color: card.dimColor
-                opacity: card.hovered ? 0 : 1
-                visible: opacity > 0.01
                 font.family: Style.font.family
-                font.pixelSize: Style.font.bodySmall * card.fontScale
-                Behavior on opacity { NumberAnimation { duration: card.fade } }
+                font.pixelSize: Style.font.caption * card.fontScale
               }
+            }
 
-              Button {
-                id: shut
-                anchors.centerIn: parent
-                text: "\u2715"
-                bordered: false
-                horizontalPadding: Style.space(4)
-                verticalPadding: Style.space(2)
-                implicitWidth: implicitHeight
-                foreground: Color.notifications.text
-                fontFamily: Style.font.family
-                fontSize: Style.font.caption * card.fontScale
-                // The deck owns pointer hover; mirror its coordinates into the
-                // shared control state just as action buttons do.
-                hasCursor: {
-                  if (!card.hovered) return false
-                  var origin = mapToItem(card, 0, 0)
-                  return card.localHoverX >= origin.x
-                      && card.localHoverX <= origin.x + width
-                      && card.localHoverY >= origin.y
-                      && card.localHoverY <= origin.y + height
+            // Timestamp and dismiss action share one stable slot, so hover can
+            // crossfade between them without moving the headline.
+            Row {
+              id: rightSide
+              anchors.right: parent.right
+              anchors.verticalCenter: title.verticalCenter
+              spacing: Style.space(5)
+
+              // The time and the close control occupy the same square. Hover
+              // crossfades between them rather than sliding the time aside: one
+              // thing changing into another reads as a single control, and
+              // nothing has to move to make room.
+              Item {
+                width: Math.max(stamp.implicitWidth, shut.implicitWidth)
+                height: Math.max(stamp.implicitHeight, shut.implicitHeight)
+                anchors.verticalCenter: parent.verticalCenter
+
+                Text {
+                  textFormat: Text.PlainText
+                  id: stamp
+                  anchors.centerIn: parent
+                  text: card.ago()
+                  color: card.dimColor
+                  opacity: card.hovered ? 0 : 1
+                  visible: opacity > 0.01
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.bodySmall * card.fontScale
+                  Behavior on opacity { NumberAnimation { duration: card.fade } }
                 }
-                enabled: card.hovered
-                opacity: card.hovered ? 1 : 0
-                visible: opacity > 0.01
-                Behavior on opacity { NumberAnimation { duration: card.fade } }
-                onClicked: card.dismissed()
-                onRightClicked: card.menuOpen = !card.menuOpen
+
+                Button {
+                  id: shut
+                  anchors.centerIn: parent
+                  text: "\u2715"
+                  bordered: false
+                  horizontalPadding: Style.space(4)
+                  verticalPadding: Style.space(2)
+                  implicitWidth: implicitHeight
+                  foreground: Color.notifications.text
+                  fontFamily: Style.font.family
+                  fontSize: Style.font.caption * card.fontScale
+                  // The deck owns pointer hover; mirror its coordinates into the
+                  // shared control state just as action buttons do.
+                  hasCursor: {
+                    if (!card.hovered) return false
+                    var origin = mapToItem(card, 0, 0)
+                    return card.localHoverX >= origin.x
+                        && card.localHoverX <= origin.x + width
+                        && card.localHoverY >= origin.y
+                        && card.localHoverY <= origin.y + height
+                  }
+                  enabled: card.hovered
+                  opacity: card.hovered ? 1 : 0
+                  visible: opacity > 0.01
+                  Behavior on opacity { NumberAnimation { duration: card.fade } }
+                  onClicked: card.dismissed()
+                  onRightClicked: card.menuOpen = !card.menuOpen
+                }
               }
             }
           }
-        }
 
-        // Rich text cannot elide, so bodies beyond the current two-line or
-        // eight-line disclosure are flattened into the bounded plain-text
-        // rendering that can end in an ellipsis.
-        FontMetrics {
-          id: metrics
-          font.family: "Liberation Sans"
-          font.pixelSize: Style.font.title * card.fontScale
-        }
-
-        Item {
-          id: bodyBox
-          clip: true
-          width: parent.width
-          // Use the text's actual laid-out height so a short body does not
-          // reserve empty lines and a wrapped body keeps every visible pixel.
-          //
-          // Measured from the laid-out height, never from `lineCount`: in
-          // RichText mode lineCount counts paragraphs rather than wrapped
-          // lines, so a single sentence that visibly takes two lines still
-          // reports one - which sized the box to one line and clipped the rest.
-          readonly property real lineH: Math.max(1, metrics.height)
-          // The cap the body is being held to right now, and the slack that
-          // decides overflow: a body a hair over the cap is not worth
-          // flattening, it is worth one more pixel.
-          readonly property real cap: lineH * card.bodyLines
-          readonly property bool overflow: rich.contentHeight > cap + lineH * 0.4
-          // The visible height comes from the rendering that is actually on
-          // screen; converting it to a rounded line count clipped descenders.
-          readonly property real shown: overflow ? plain.contentHeight : rich.contentHeight
-          // Not clamped to `cap`. The line limit is enforced where the lines
-          // are - `plain.maximumLineCount` - and its laid-out height is a hair
-          // taller than lineH x lines once leading and descenders are counted.
-          // Clamping the box to the arithmetic instead sliced the last line
-          // through the middle rather than eliding it.
-          height: Math.ceil(shown)
-
-          // What this box would be if the body were closed. Only the icon reads
-          // it, and only so that it does not move when the body opens.
-          readonly property real restHeight:
-              Math.min(Math.ceil(lineH * 2), Math.ceil(rich.contentHeight))
-          visible: card.hasBody
-          opacity: card.showsContent ? 1 : 0
-          Behavior on opacity { NumberAnimation { duration: card.fade } }
-
-          Text {
-            id: rich
-            width: parent.width
-            visible: !bodyBox.overflow
-            textFormat: Text.RichText
-            text: Markup.colourLinks(String(card.row.bodyRich || card.row.body || ""),
-                                     String(Color.notifications.countdown))
-            color: card.bodyColor
+          // Rich text cannot elide, so bodies beyond the current two-line or
+          // eight-line disclosure are flattened into the bounded plain-text
+          // rendering that can end in an ellipsis.
+          FontMetrics {
+            id: metrics
             font.family: "Liberation Sans"
             font.pixelSize: Style.font.title * card.fontScale
-            wrapMode: Text.Wrap
-            // Second gate on the same rule. Markup drops an anchor it will
-            // not vouch for, so nothing unsafe should arrive here - but this
-            // is one regex away from being wrong, and the cost of the check
-            // is a function call.
-            onLinkActivated: function(url) {
-              Security.openExternalUrl(url)
-            }
           }
 
-          Text {
-            textFormat: Text.PlainText
-            id: plain
+          Item {
+            id: bodyBox
+            clip: true
             width: parent.width
-            visible: bodyBox.overflow
-            text: String(card.row.bodyLine || card.row.body || "")
-            color: card.bodyColor
-            font.family: "Liberation Sans"
-            font.pixelSize: Style.font.title * card.fontScale
-            wrapMode: Text.Wrap
-            maximumLineCount: card.bodyLines
-            elide: Text.ElideRight
-          }
+            // Use the text's actual laid-out height so a short body does not
+            // reserve empty lines and a wrapped body keeps every visible pixel.
+            //
+            // Measured from the laid-out height, never from `lineCount`: in
+            // RichText mode lineCount counts paragraphs rather than wrapped
+            // lines, so a single sentence that visibly takes two lines still
+            // reports one - which sized the box to one line and clipped the rest.
+            readonly property real lineH: Math.max(1, metrics.height)
+            // The cap the body is being held to right now, and the slack that
+            // decides overflow: a body a hair over the cap is not worth
+            // flattening, it is worth one more pixel.
+            readonly property real cap: lineH * card.bodyLines
+            readonly property bool overflow: rich.contentHeight > cap + lineH * 0.4
+            // The visible height comes from the rendering that is actually on
+            // screen; converting it to a rounded line count clipped descenders.
+            readonly property real shown: overflow ? plain.contentHeight : rich.contentHeight
+            // Not clamped to `cap`. The line limit is enforced where the lines
+            // are - `plain.maximumLineCount` - and its laid-out height is a hair
+            // taller than lineH x lines once leading and descenders are counted.
+            // Clamping the box to the arithmetic instead sliced the last line
+            // through the middle rather than eliding it.
+            height: Math.ceil(shown)
 
-        }
-
-        // Everything the card can do, written out. Visible whenever the card's
-        // content is - not on hover - because an action nobody knows is there
-        // may as well not exist. Three across is what fits; anything beyond
-        // that folds into "More", which opens the lot as a list rather than a
-        // floating menu: this surface is clipped, and a popup that can be cut
-        // off is worse than one more row.
-        Item {
-          id: deedArea
-          width: parent.width
-
-          // The space under the body does one job at a time. Answering used to
-          // leave the buttons stacked above the field, which read as a form
-          // rather than as a reply - and put "Reply" directly above the box it
-          // had just opened. Escape puts them back, because it puts the card
-          // back to not replying.
-          //
-          // The row is under the pointer only, and only in an open deck: a
-          // collapsed deck is a peek of an edge, and buttons appearing inside
-          // one would be clipped to nothing.
-          readonly property string mode: card.replying ? "reply"
-                                       : card.menuOpen ? "menu"
-                                       : card.deedsOpen ? "list"
-                                       : (card.hovered && card.expanded
-                                          && card.allDeeds.length > 0) ? "row" : ""
-
-          readonly property real contentHeight: mode === "reply" ? replyBox.height
-                                              : mode === "menu" ? menuColumn.implicitHeight
-                                              : mode === "list" ? deedColumn.implicitHeight
-                                              : mode === "row" ? deedRow.implicitHeight : 0
-          // What this area's state asks for, with nothing animating. The card
-          // lays out from it; the drawn height below is whatever slack the
-          // scene has given the card so far, so the two can never disagree.
-          readonly property real wanted: mode === "" ? 0 : contentHeight + Style.space(7)
-          height: Math.max(0, card.drawnHeight - card.fixedHeight)
-          visible: height > 0
-          clip: true
-
-          Row {
-            id: deedRow
-            anchors.bottom: parent.bottom
-            // Right by default: the buttons line up under the time and the
-            // close control rather than under the icon, which keeps the left
-            // edge of every card reading as one column of text.
-            anchors.right: card.actionsAlign === "right" ? parent.right : undefined
-            anchors.left: card.actionsAlign === "right" ? undefined : parent.left
-            spacing: Style.space(6)
-            opacity: deedArea.mode === "row" ? 1 : 0
-            visible: opacity > 0.01
+            // What this box would be if the body were closed. Only the icon reads
+            // it, and only so that it does not move when the body opens.
+            readonly property real restHeight:
+                Math.min(Math.ceil(lineH * 2), Math.ceil(rich.contentHeight))
+            visible: card.hasBody
+            opacity: card.showsContent ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: card.fade } }
 
-            Repeater {
-              model: card.deeds
-              DeedButton {
-                required property var modelData
-                deed: modelData
-                toast: card
+            Text {
+              id: rich
+              width: parent.width
+              visible: !bodyBox.overflow
+              textFormat: Text.RichText
+              text: Markup.colourLinks(String(card.row.bodyRich || card.row.body || ""),
+                                       String(Color.notifications.countdown))
+              color: card.bodyColor
+              font.family: "Liberation Sans"
+              font.pixelSize: Style.font.title * card.fontScale
+              wrapMode: Text.Wrap
+              // Second gate on the same rule. Markup drops an anchor it will
+              // not vouch for, so nothing unsafe should arrive here - but this
+              // is one regex away from being wrong, and the cost of the check
+              // is a function call.
+              onLinkActivated: function(url) {
+                Security.openExternalUrl(url)
               }
             }
 
-            DeedButton {
-              visible: card.spare.length > 0
-              deed: ({ kind: "more", label: "More", value: "" })
-              toast: card
+            Text {
+              textFormat: Text.PlainText
+              id: plain
+              width: parent.width
+              visible: bodyBox.overflow
+              text: String(card.row.bodyLine || card.row.body || "")
+              color: card.bodyColor
+              font.family: "Liberation Sans"
+              font.pixelSize: Style.font.title * card.fontScale
+              wrapMode: Text.Wrap
+              maximumLineCount: card.bodyLines
+              elide: Text.ElideRight
             }
+
           }
 
-          // Typing an answer, in the card the message arrived in. Only the
-          // phone can actually deliver it - this is the near end of a
-          // conversation that lives on the device.
+          // Everything the card can do, written out. Visible whenever the card's
+          // content is - not on hover - because an action nobody knows is there
+          // may as well not exist. Three across is what fits; anything beyond
+          // that folds into "More", which opens the lot as a list rather than a
+          // floating menu: this surface is clipped, and a popup that can be cut
+          // off is worse than one more row.
           Item {
-            id: replyBox
+            id: deedArea
             width: parent.width
-            // A step, not an animation. This height is part of what the
-            // layout reads, and anything the layout reads must not move
-            // between frames - the scene animates the slack around it.
-            height: card.replying ? replyInput.implicitHeight + Style.space(3) : 0
+
+            // The space under the body does one job at a time. Answering used to
+            // leave the buttons stacked above the field, which read as a form
+            // rather than as a reply - and put "Reply" directly above the box it
+            // had just opened. Escape puts them back, because it puts the card
+            // back to not replying.
+            //
+            // The row is under the pointer only, and only in an open deck: a
+            // collapsed deck is a peek of an edge, and buttons appearing inside
+            // one would be clipped to nothing.
+            readonly property string mode: card.replying ? "reply"
+                                         : card.menuOpen ? "menu"
+                                         : card.deedsOpen ? "list"
+                                         : (card.hovered && card.expanded
+                                            && card.allDeeds.length > 0) ? "row" : ""
+
+            readonly property real contentHeight: mode === "reply" ? replyBox.height
+                                                : mode === "menu" ? menuColumn.implicitHeight
+                                                : mode === "list" ? deedColumn.implicitHeight
+                                                : mode === "row" ? deedRow.implicitHeight : 0
+            // What this area's state asks for, with nothing animating. The card
+            // lays out from it; the drawn height below is whatever slack the
+            // scene has given the card so far, so the two can never disagree.
+            readonly property real wanted: mode === "" ? 0 : contentHeight + Style.space(7)
+            height: Math.max(0, card.drawnHeight - card.fixedHeight)
             visible: height > 0
-            anchors.bottom: parent.bottom
             clip: true
 
-            // The kit's own text input: same focus ring, selection tint and
-            // padding as every other field in the desktop, and it follows
-            // [controls] in the theme rather than a shape invented here.
-            TextField {
-              id: replyInput
-              anchors.fill: parent
-              anchors.topMargin: Style.space(3)
-              foreground: Color.notifications.text
-              font.family: Style.font.family
-              font.pixelSize: Style.font.body * card.fontScale
-              leftPadding: horizontalPadding + Border.left(_borderSpec)
-                           + (sendButton.visible && sendButton.isRtl
-                              ? sendButton.width + Style.spacing.controlGap : 0)
-              rightPadding: horizontalPadding + Border.right(_borderSpec)
-                            + (sendButton.visible && !sendButton.isRtl
-                               ? sendButton.width + Style.spacing.controlGap : 0)
-              placeholderText: card.replyError || ("Reply to " + String(card.row.replyTo || card.row.summary || ""))
-              // Qt's own paste reads whatever another app offers, to the end,
-              // however much that is - into the shell every panel runs in.
-              // So the field has no paste of its own: not the keys, not the
-              // middle button's primary selection, not the context menu. A
-              // paste goes through boundedPaste instead, which stops reading
-              // at a reply's worth of text.
-              //
-              // Nor may it watch the clipboard. An editable TextInput listens
-              // for every clipboard change and asks for the new contents to
-              // decide whether it could paste (QQuickTextInput::
-              // q_canPasteChanged) - a read of foreign data with no limit,
-              // whether or not anyone pastes, for as long as the field
-              // exists. A read-only one skips that. So the field is read-only
-              // to Qt and the typing is done here: characters, Backspace and
-              // Delete (by word with Ctrl), cut, select-all, Enter, Escape.
-              // Cursor movement and selection are still Qt's own.
-              readOnly: true
-              cursorVisible: activeFocus
-              QQC.ContextMenu.menu: null
-              Keys.onPressed: function(event) {
-                event.accepted = ReplyEdit.key(replyInput, event, {
-                  paste: function() { boundedPaste.start() },
-                  send: function(t) { card.replySent(t); replyInput.text = "" },
-                  cancel: function() { replyInput.text = ""; card.replyCancelled() }
-                }, { paste: StandardKey.Paste, selectAll: StandardKey.SelectAll, cut: StandardKey.Cut })
-              }
-              // A read-only field does not take focus on a click by itself.
-              TapHandler {
-                acceptedButtons: Qt.LeftButton
-                onTapped: replyInput.forceActiveFocus()
-              }
-              MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.MiddleButton
-                onPressed: function(mouse) { mouse.accepted = true }
+            Row {
+              id: deedRow
+              anchors.bottom: parent.bottom
+              // Right by default: the buttons line up under the time and the
+              // close control rather than under the icon, which keeps the left
+              // edge of every card reading as one column of text.
+              anchors.right: card.actionsAlign === "right" ? parent.right : undefined
+              anchors.left: card.actionsAlign === "right" ? undefined : parent.left
+              spacing: Style.space(6)
+              opacity: deedArea.mode === "row" ? 1 : 0
+              visible: opacity > 0.01
+              Behavior on opacity { NumberAnimation { duration: card.fade } }
+
+              Repeater {
+                model: card.deeds
+                DeedButton {
+                  required property var modelData
+                  deed: modelData
+                  toast: card
+                }
               }
 
-              Process {
-                id: boundedPaste
-                readonly property int limit: 4096
-                property string got: ""
-                property bool over: false
-                function start() {
-                  if (running) return
-                  got = ""
-                  over = false
-                  running = true
+              DeedButton {
+                visible: card.spare.length > 0
+                deed: ({ kind: "more", label: "More", value: "" })
+                toast: card
+              }
+            }
+
+            // Typing an answer, in the card the message arrived in. Only the
+            // phone can actually deliver it - this is the near end of a
+            // conversation that lives on the device.
+            Item {
+              id: replyBox
+              width: parent.width
+              // A step, not an animation. This height is part of what the
+              // layout reads, and anything the layout reads must not move
+              // between frames - the scene animates the slack around it.
+              height: card.replying ? replyInput.implicitHeight + Style.space(3) : 0
+              visible: height > 0
+              anchors.bottom: parent.bottom
+              clip: true
+
+              // The kit's own text input: same focus ring, selection tint and
+              // padding as every other field in the desktop, and it follows
+              // [controls] in the theme rather than a shape invented here.
+              TextField {
+                id: replyInput
+                anchors.fill: parent
+                anchors.topMargin: Style.space(3)
+                foreground: Color.notifications.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body * card.fontScale
+                leftPadding: horizontalPadding + Border.left(_borderSpec)
+                             + (sendButton.visible && sendButton.isRtl
+                                ? sendButton.width + Style.spacing.controlGap : 0)
+                rightPadding: horizontalPadding + Border.right(_borderSpec)
+                              + (sendButton.visible && !sendButton.isRtl
+                                 ? sendButton.width + Style.spacing.controlGap : 0)
+                placeholderText: card.replyError || ("Reply to " + String(card.row.replyTo || card.row.summary || ""))
+                // Qt's own paste reads whatever another app offers, to the end,
+                // however much that is - into the shell every panel runs in.
+                // So the field has no paste of its own: not the keys, not the
+                // middle button's primary selection, not the context menu. A
+                // paste goes through boundedPaste instead, which stops reading
+                // at a reply's worth of text.
+                //
+                // Nor may it watch the clipboard. An editable TextInput listens
+                // for every clipboard change and asks for the new contents to
+                // decide whether it could paste (QQuickTextInput::
+                // q_canPasteChanged) - a read of foreign data with no limit,
+                // whether or not anyone pastes, for as long as the field
+                // exists. A read-only one skips that. So the field is read-only
+                // to Qt and the typing is done here: characters, Backspace and
+                // Delete (by word with Ctrl), cut, select-all, Enter, Escape.
+                // Cursor movement and selection are still Qt's own.
+                readOnly: true
+                cursorVisible: activeFocus
+                QQC.ContextMenu.menu: null
+                Keys.onPressed: function(event) {
+                  event.accepted = ReplyEdit.key(replyInput, event, {
+                    paste: function() { boundedPaste.start() },
+                    send: function(t) { card.replySent(t); replyInput.text = "" },
+                    cancel: function() { replyInput.text = ""; card.replyCancelled() }
+                  }, { paste: StandardKey.Paste, selectAll: StandardKey.SelectAll, cut: StandardKey.Cut })
                 }
-                command: ["wl-paste", "--no-newline", "--type", "text/plain;charset=utf-8"]
-                stdout: SplitParser {
-                  splitMarker: ""
-                  onRead: function(data) {
-                    if (boundedPaste.over) return
-                    boundedPaste.got += data
-                    if (boundedPaste.got.length > boundedPaste.limit) {
-                      boundedPaste.over = true
-                      boundedPaste.got = boundedPaste.got.slice(0, boundedPaste.limit)
-                      boundedPaste.running = false
+                // A read-only field does not take focus on a click by itself.
+                TapHandler {
+                  acceptedButtons: Qt.LeftButton
+                  onTapped: replyInput.forceActiveFocus()
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  acceptedButtons: Qt.MiddleButton
+                  onPressed: function(mouse) { mouse.accepted = true }
+                }
+
+                Process {
+                  id: boundedPaste
+                  readonly property int limit: 4096
+                  property string got: ""
+                  property bool over: false
+                  function start() {
+                    if (running) return
+                    got = ""
+                    over = false
+                    running = true
+                  }
+                  command: ["wl-paste", "--no-newline", "--type", "text/plain;charset=utf-8"]
+                  stdout: SplitParser {
+                    splitMarker: ""
+                    onRead: function(data) {
+                      if (boundedPaste.over) return
+                      boundedPaste.got += data
+                      if (boundedPaste.got.length > boundedPaste.limit) {
+                        boundedPaste.over = true
+                        boundedPaste.got = boundedPaste.got.slice(0, boundedPaste.limit)
+                        boundedPaste.running = false
+                      }
                     }
                   }
+                  onExited: {
+                    var t = got
+                    got = ""
+                    if (!t) return
+                    if (replyInput.selectedText.length > 0)
+                      replyInput.remove(replyInput.selectionStart, replyInput.selectionEnd)
+                    replyInput.insert(replyInput.cursorPosition, t)
+                  }
                 }
-                onExited: {
-                  var t = got
-                  got = ""
-                  if (!t) return
-                  if (replyInput.selectedText.length > 0)
-                    replyInput.remove(replyInput.selectionStart, replyInput.selectionEnd)
-                  replyInput.insert(replyInput.cursorPosition, t)
-                }
-              }
 
-              // Enter sends, but an affordance nobody can see is not one.
-              // Sits at the trailing edge of the field. When the first
-              // directional character is Arabic or Hebrew the field reads
-              // right-to-left, so "trailing" means left.
-              Button {
-                id: sendButton
-                x: isRtl
-                   ? Border.left(replyInput._borderSpec) + replyInput.horizontalPadding
-                   : parent.width - width - Border.right(replyInput._borderSpec)
-                     - replyInput.horizontalPadding
-                anchors.verticalCenter: parent.verticalCenter
-                visible: replyInput.text.length > 0
-                text: "Send"
-                bordered: false
-                foreground: Color.notifications.text
-                fontFamily: Style.font.family
-                fontSize: Style.font.body * card.fontScale
-                onClicked: { card.replySent(replyInput.text); replyInput.text = "" }
+                // Enter sends, but an affordance nobody can see is not one.
+                // Sits at the trailing edge of the field. When the first
+                // directional character is Arabic or Hebrew the field reads
+                // right-to-left, so "trailing" means left.
+                Button {
+                  id: sendButton
+                  x: isRtl
+                     ? Border.left(replyInput._borderSpec) + replyInput.horizontalPadding
+                     : parent.width - width - Border.right(replyInput._borderSpec)
+                       - replyInput.horizontalPadding
+                  anchors.verticalCenter: parent.verticalCenter
+                  visible: replyInput.text.length > 0
+                  text: "Send"
+                  bordered: false
+                  foreground: Color.notifications.text
+                  fontFamily: Style.font.family
+                  fontSize: Style.font.body * card.fontScale
+                  onClicked: { card.replySent(replyInput.text); replyInput.text = "" }
 
-                // True when the reply text starts with an RTL script.
-                // Skips anything without a strong direction (spaces,
-                // digits, brackets, punctuation) to find the first
-                // character that actually picks a side. 
-                property bool isRtl: {
-                  var t = replyInput.text;
-                  for (var i = 0; i < t.length;) {
-                    var c = t.codePointAt(i);
-                    i += c > 0xFFFF ? 2 : 1;                         // step past surrogate pairs
-                    if (c <= 0x7F && !(c >= 0x41 && c <= 0x5A)
-                                  && !(c >= 0x61 && c <= 0x7A))
-                      continue;                                       // skip all ASCII non-letters
-                    if (c <= 0x024F) return false;                    // Latin
-                    if (c >= 0x0590 && c <= 0x08FF) return true;      // Hebrew, Arabic, Syriac, Thaana
-                    if (c >= 0xFB50 && c <= 0xFDFF) return true;      // Arabic Presentation Forms-A
-                    if (c >= 0xFE70 && c <= 0xFEFF) return true;      // Arabic Presentation Forms-B
+                  // True when the reply text starts with an RTL script.
+                  // Skips anything without a strong direction (spaces,
+                  // digits, brackets, punctuation) to find the first
+                  // character that actually picks a side. 
+                  property bool isRtl: {
+                    var t = replyInput.text;
+                    for (var i = 0; i < t.length;) {
+                      var c = t.codePointAt(i);
+                      i += c > 0xFFFF ? 2 : 1;                         // step past surrogate pairs
+                      if (c <= 0x7F && !(c >= 0x41 && c <= 0x5A)
+                                    && !(c >= 0x61 && c <= 0x7A))
+                        continue;                                       // skip all ASCII non-letters
+                      if (c <= 0x024F) return false;                    // Latin
+                      if (c >= 0x0590 && c <= 0x08FF) return true;      // Hebrew, Arabic, Syriac, Thaana
+                      if (c >= 0xFB50 && c <= 0xFDFF) return true;      // Arabic Presentation Forms-A
+                      if (c >= 0xFE70 && c <= 0xFEFF) return true;      // Arabic Presentation Forms-B
+                      return false;
+                    }
                     return false;
                   }
-                  return false;
+                }
+              }
+
+              onVisibleChanged: if (visible) replyInput.forceActiveFocus()
+            }
+
+            Column {
+              id: deedColumn
+              anchors.bottom: parent.bottom
+              width: parent.width
+              spacing: Style.space(4)
+              opacity: deedArea.mode === "list" ? 1 : 0
+              visible: opacity > 0.01
+              Behavior on opacity { NumberAnimation { duration: card.fade } }
+
+              Repeater {
+                model: card.deedsOpen ? card.allDeeds : []
+                DeedButton {
+                  required property var modelData
+                  deed: modelData
+                  toast: card
+                  wide: true
                 }
               }
             }
 
-            onVisibleChanged: if (visible) replyInput.forceActiveFocus()
-          }
+            // Right-click: what to do about this sender, rather than about this
+            // message. Drawn in the card rather than as a popup for the same
+            // reason "More" is - the notification surface is clipped, and a menu
+            // that can be cut in half is worse than one that pushes the card
+            // down by four rows.
+            Column {
+              id: menuColumn
+              anchors.bottom: parent.bottom
+              width: parent.width
+              spacing: Style.space(4)
+              opacity: deedArea.mode === "menu" ? 1 : 0
+              visible: opacity > 0.01
+              Behavior on opacity { NumberAnimation { duration: card.fade } }
 
-          Column {
-            id: deedColumn
-            anchors.bottom: parent.bottom
-            width: parent.width
-            spacing: Style.space(4)
-            opacity: deedArea.mode === "list" ? 1 : 0
-            visible: opacity > 0.01
-            Behavior on opacity { NumberAnimation { duration: card.fade } }
-
-            Repeater {
-              model: card.deedsOpen ? card.allDeeds : []
-              DeedButton {
-                required property var modelData
-                deed: modelData
-                toast: card
-                wide: true
-              }
-            }
-          }
-
-          // Right-click: what to do about this sender, rather than about this
-          // message. Drawn in the card rather than as a popup for the same
-          // reason "More" is - the notification surface is clipped, and a menu
-          // that can be cut in half is worse than one that pushes the card
-          // down by four rows.
-          Column {
-            id: menuColumn
-            anchors.bottom: parent.bottom
-            width: parent.width
-            spacing: Style.space(4)
-            opacity: deedArea.mode === "menu" ? 1 : 0
-            visible: opacity > 0.01
-            Behavior on opacity { NumberAnimation { duration: card.fade } }
-
-            Repeater {
-              model: card.menuOpen ? card.menuDeeds : []
-              DeedButton {
-                required property var modelData
-                deed: modelData
-                toast: card
-                wide: true
+              Repeater {
+                model: card.menuOpen ? card.menuDeeds : []
+                DeedButton {
+                  required property var modelData
+                  deed: modelData
+                  toast: card
+                  wide: true
+                }
               }
             }
           }
         }
       }
-    }
 
-    // Optional visual countdown. The expiry clock keeps running when this is
-    // disabled, so hiding the animation never makes a notification permanent.
-    //
-    // Along the bottom, just inside the frame: flush with the inner edge of
-    // the bottom border, and its ends follow the rounded inner corners rather
-    // than poking out past them. It is the bottom band of a rectangle the
-    // shape of the card's inside, cut to the time remaining - a plain clip,
-    // so the ticking costs no mask.
-    Item {
-      id: countdown
-      readonly property real thickness: Math.max(2, Style.spacing.hairline)
-      readonly property real innerWidth: Math.max(0, body.width - card.edgeLeft - card.edgeRight)
-      readonly property real innerHeight: Math.max(0, body.height - card.edgeTop - card.edgeBottom)
-      visible: card.showCountdown && card.row.duration > 0 && card.place.front
-               && card.remaining > 0 && !card.expanded
-      x: body.x + card.edgeLeft
-      y: body.y + body.height - card.edgeBottom - thickness
-      height: thickness
-      width: visible ? innerWidth * (card.remaining / Math.max(1, card.row.duration)) : 0
-      clip: true
+      // Optional visual countdown. The expiry clock keeps running when this is
+      // disabled, so hiding the animation never makes a notification permanent.
+      //
+      // Along the bottom, just inside the frame: flush with the inner edge of
+      // the bottom border, and its ends follow the rounded inner corners rather
+      // than poking out past them. It is the bottom band of a rectangle the
+      // shape of the card's inside, cut to the time remaining - a plain clip,
+      // so the ticking costs no mask.
+      Item {
+        id: countdown
+        readonly property real thickness: Math.max(2, Style.spacing.hairline)
+        readonly property real innerWidth: Math.max(0, body.width - card.edgeLeft - card.edgeRight)
+        readonly property real innerHeight: Math.max(0, body.height - card.edgeTop - card.edgeBottom)
+        visible: card.showCountdown && card.row.duration > 0 && card.place.front
+                 && card.remaining > 0 && !card.expanded
+        x: body.x + card.edgeLeft
+        y: body.y + body.height - card.edgeBottom - thickness
+        height: thickness
+        width: visible ? innerWidth * (card.remaining / Math.max(1, card.row.duration)) : 0
+        clip: true
 
-      Rectangle {
-        y: countdown.thickness - height
-        width: countdown.innerWidth
-        height: countdown.innerHeight
-        radius: Math.max(0, Style.cornerRadius - Math.max(card.edgeLeft, card.edgeBottom))
-        color: card.accentColor
+        Rectangle {
+          y: countdown.thickness - height
+          width: countdown.innerWidth
+          height: countdown.innerHeight
+          radius: Math.max(0, Style.cornerRadius - Math.max(card.edgeLeft, card.edgeBottom))
+          color: card.accentColor
+        }
+      }
+
+      // Clicks on the card. Underneath the card's own content: this covers the
+      // whole card and is declared after it, so it sat on top and swallowed
+      // every click before a button could see one - the buttons highlighted on
+      // hover and then did nothing when pressed. Items above that do not accept
+      // a click still let it fall through to here, so click-to-open keeps
+      // working everywhere except on an actual button.
+      MouseArea {
+        anchors.fill: parent
+        z: -1
+        // Deliberately NOT hoverEnabled: hover goes to the topmost item that
+        // wants it, so a card that took hover would starve the deck's own
+        // region and the stack would never expand.
+        hoverEnabled: false
+        acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+        cursorShape: Qt.PointingHandCursor
+
+        onClicked: function(mouse) {
+          if (mouse.button === Qt.RightButton) { card.menuOpen = !card.menuOpen; return }
+          // With the menu open, a click anywhere else on the card is a way out
+          // of it rather than a way into the app - the surface takes no keyboard
+          // focus while it is open, so Escape never reaches us.
+          if (card.menuOpen) { card.menuOpen = false; return }
+          if (mouse.button === Qt.MiddleButton) card.dismissed()
+          else card.activated()
+        }
       }
     }
+  }
 
-    // Clicks on the card. Underneath the card's own content: this covers the
-    // whole card and is declared after it, so it sat on top and swallowed
-    // every click before a button could see one - the buttons highlighted on
-    // hover and then did nothing when pressed. Items above that do not accept
-    // a click still let it fall through to here, so click-to-open keeps
-    // working everywhere except on an actual button.
-    MouseArea {
-      anchors.fill: parent
-      z: -1
-      // Deliberately NOT hoverEnabled: hover goes to the topmost item that
-      // wants it, so a card that took hover would starve the deck's own
-      // region and the stack would never expand.
-      hoverEnabled: false
-      acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-      cursorShape: Qt.PointingHandCursor
-
-      onClicked: function(mouse) {
-        if (mouse.button === Qt.RightButton) { card.menuOpen = !card.menuOpen; return }
-        // With the menu open, a click anywhere else on the card is a way out
-        // of it rather than a way into the app - the surface takes no keyboard
-        // focus while it is open, so Escape never reaches us.
-        if (card.menuOpen) { card.menuOpen = false; return }
-        if (mouse.button === Qt.MiddleButton) card.dismissed()
-        else card.activated()
-      }
-    }
+  Smear {
+    face: cardFace
+    armed: motion.layered
+    active: motion.smearing
+    dx: motion.dx * motion.reach / card.scale
+    dy: motion.dy * motion.reach / card.scale
+    copies: motion.copies
   }
 }

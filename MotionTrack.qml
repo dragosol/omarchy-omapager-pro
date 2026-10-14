@@ -33,13 +33,13 @@ Item {
   property bool moving: false
   property bool smearing: false
   // Set by the owner when an exit is coming (a card about to time out, a
-  // finger on it, the panel open and still): the layer and its effect are made
+  // finger on it, the panel open and still): the texture and its effect are made
   // then, while nothing moves, instead of on the first frame of the exit -
   // where building them cost several dropped frames as the card set off.
   property bool prime: false
   // ...and kept a moment after the owner stops asking: the exit itself is
   // often what ends the reason (the panel leaving is no longer "open"), and
-  // dropping the layer on that frame would rebuild it on the next.
+  // dropping the texture on that frame would rebuild it on the next.
   property bool primeHeld: false
   onPrimeChanged: { if (prime) primeHeld = true; else primeGrace.restart() }
   Timer { id: primeGrace; interval: 400; onTriggered: track.primeHeld = track.prime }

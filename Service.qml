@@ -3988,12 +3988,6 @@ Item {
               trackX: (1 - service.missedShown) * missedPanel.away
               prime: service.missedVisible
             }
-            layer.enabled: headerMotion.layered
-            layer.smooth: true
-            layer.effect: Smear {
-              dx: headerMotion.dx * headerMotion.reach
-              copies: headerMotion.copies
-            }
             opacity: service.missedPeeking ? 1 : missedPanel.fadeIn
             width: parent.width
             height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
@@ -4001,8 +3995,14 @@ Item {
             color: Color.notifications.background
             // The cards' own edge - the window border - so the heading reads
             // as one of them.
-            borderSpec: Border.hyprlandActiveSpec(Color.notifications.border,
-                                                  service.windowBorderWidth)
+            borderSpec: headerRing.surfaceSpec
+
+            Ring {
+              id: headerRing
+              spec: Border.hyprlandActiveSpec(Color.notifications.border,
+                                              service.windowBorderWidth)
+              radius: missedHeader.radius
+            }
 
             Row {
               anchors.left: parent.left
@@ -4061,6 +4061,14 @@ Item {
                 onClicked: service.closeMissed()
               }
             }
+          }
+
+          Smear {
+            face: missedHeader
+            armed: headerMotion.layered
+            active: headerMotion.smearing
+            dx: headerMotion.dx * headerMotion.reach
+            copies: headerMotion.copies
           }
 
           Item {
