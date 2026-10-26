@@ -1262,7 +1262,9 @@ Item {
   // The panel proper: shown, and not merely its header peeking from the
   // corner. The deck steps aside for this, not for a peek.
   readonly property bool missedUp: missedVisible && !missedPeeking
-  readonly property int missedLimit: 30
+  // Everything the store keeps (its HISTORY_MAX), so the panel is the whole
+  // list and not just the newest few.
+  readonly property int missedLimit: 100
 
   Process {
     id: edgeProc
@@ -1757,11 +1759,9 @@ Item {
     seeMissed(keys)
   }
 
-  // The panel holds only the newest `missedLimit`, so clearing just those
-  // let the older ones come back on the next read - "Clear all" took several
-  // goes. The store is told to see everything missed up to now, and a read
-  // already on its way (or one that lands before the store has caught up)
-  // cannot put any of it back.
+  // The store is told to see everything missed up to now, not just the keys
+  // the panel holds, and a read already on its way (or one that lands before
+  // the store has caught up) cannot put any of it back.
   property real missedClearedAt: 0
   function clearMissed() {
     var keys = []

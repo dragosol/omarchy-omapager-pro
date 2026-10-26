@@ -385,7 +385,7 @@ def main():
     if verb == "unseen":
         return cmd_unseen(max(1, min(100, int(args[1]) if len(args) > 1 else 30)))
     if verb == "seen":
-        return cmd_seen(args[1:51])
+        return cmd_seen(args[1:101])
     if verb == "seen-all":
         return cmd_seen_all(float(args[1]))
     if verb == "forget-all":
