@@ -303,6 +303,24 @@ def cmd_seen(keys):
     return 0
 
 
+# "Clear all" in the panel: the panel only ever holds the newest few, so
+# clearing what it shows left the older ones to come back on the next read.
+# Everything missed up to the moment of the clear is seen; anything that
+# arrives after it is not.
+def cmd_seen_all(cutoff):
+    for name in os.listdir(HISTORY):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(HISTORY, name)
+        entry = read_json(path)
+        if (entry is not None and entry.get("closed_reason") in MISSED_REASONS
+                and not entry.get("seen")
+                and float(entry.get("closed_ts") or 0) <= cutoff):
+            entry["seen"] = True
+            write_json(path, sanitise(entry))
+    return 0
+
+
 def cmd_forget_all():
     for name in os.listdir(HISTORY):
         try:
@@ -368,6 +386,8 @@ def main():
         return cmd_unseen(max(1, min(100, int(args[1]) if len(args) > 1 else 30)))
     if verb == "seen":
         return cmd_seen(args[1:51])
+    if verb == "seen-all":
+        return cmd_seen_all(float(args[1]))
     if verb == "forget-all":
         return cmd_forget_all()
     if verb == "quiet":

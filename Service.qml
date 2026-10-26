@@ -1389,7 +1389,10 @@ Item {
   // first), changed in place: moved, inserted or removed, never rebuilt.
   function loadMissed(entries) {
     var listed = {}
-    for (var e = 0; e < entries.length; e++) if (entries[e]) listed[entries[e].key] = true
+    entries = entries.filter(function(entry) {
+      return entry && !(missedClearedAt && Number(entry.closed_ts) <= missedClearedAt)
+    })
+    for (var e = 0; e < entries.length; e++) listed[entries[e].key] = true
     for (var r = missed.count - 1; r >= 0; r--)
       if (!missed.get(r).live && !listed[missed.get(r).key]) missed.remove(r)
     var p = panelLiveCount()
@@ -1754,9 +1757,18 @@ Item {
     seeMissed(keys)
   }
 
+  // The panel holds only the newest `missedLimit`, so clearing just those
+  // let the older ones come back on the next read - "Clear all" took several
+  // goes. The store is told to see everything missed up to now, and a read
+  // already on its way (or one that lands before the store has caught up)
+  // cannot put any of it back.
+  property real missedClearedAt: 0
   function clearMissed() {
     var keys = []
     for (var i = 0; i < missed.count; i++) keys.push(missed.get(i).key)
+    missedClearedAt = Date.now() / 1000
+    Store.write(storeProc, storeBin, "seen-all", null, [String(missedClearedAt)])
+    missedCache = []
     seeMissed(keys)
     closeMissed()
   }
