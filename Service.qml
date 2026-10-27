@@ -1149,16 +1149,14 @@ Item {
     missedFollowing = true
   }
   function followPull(x) {
-    missedShown = Math.max(0, Math.min(1, -x / pullSpan))
+    missedShown = stretchShown(-x / pullSpan)
   }
   function endPull(g) {
     pullingPanel = false
     missedFollowing = false
     var open = missedShown > 0.45 || ((g ? g.vx : 0) < -0.9 && missedShown > 0.08)
     if (open) {
-      missedOpen = true
-      slideMissed(1, Math.max(120, 260 * (1 - missedShown)))
-      missedAway.restart()
+      settleOpen()
     } else {
       slideMissed(0, Math.max(120, 220 * missedShown))
     }
@@ -1253,7 +1251,7 @@ Item {
 
   ListModel { id: missed }
   property int missedCount: 0
-  property real missedShown: 0          // 0 away .. 1 fully in, as drawn
+  property real missedShown: 0          // 0 away .. 1 fully in, as drawn (a little past 1 while stretched)
   property bool missedOpen: false       // settled in, not following fingers
   property bool missedFollowing: false  // fingers are on it right now
   property bool missedLoaded: false
@@ -1474,7 +1472,7 @@ Item {
 
   function followMissed(progress) {
     if (!missedFollowing) return
-    missedShown = Math.max(0, Math.min(1, progress / edgeFull))
+    missedShown = stretchShown(progress / edgeFull)
   }
 
   // Let go: open if it came more than half way, or was flicked in, and go
@@ -1486,9 +1484,7 @@ Item {
     missedFollowing = false
     var open = missedShown > 0.45 || (speed > 0.9 && missedShown > 0.08)
     if (open) {
-      missedOpen = true
-      slideMissed(1, Math.max(120, 260 * (1 - missedShown)))
-      missedAway.restart()
+      settleOpen()
     } else {
       slideMissed(0, Math.max(120, 220 * missedShown))
     }
@@ -1538,6 +1534,22 @@ Item {
   readonly property real panelSpan: notificationWidth + edgeClearance
   readonly property real panelAway: notificationWidth + Style.spacing.sm + Style.space(44)
                                     + edgeClearance + Style.space(24)
+  // Pulled on past fully in, the panel keeps coming with the fingers but
+  // gives less and less - at most `missedStretch` - and springs back to its
+  // place when they let go. `raw` is how far in the fingers have brought it,
+  // 1 = fully in, unbounded above.
+  readonly property real missedStretch: Style.space(56)
+  function stretchShown(raw) {
+    if (!(raw > 1)) return Math.max(0, raw || 0)
+    var past = (raw - 1) * panelAway
+    var given = missedStretch * (1 - 1 / (past * 0.55 / missedStretch + 1))
+    return 1 + given / Math.max(1, panelAway)
+  }
+  function settleOpen() {
+    missedOpen = true
+    slideMissed(1, missedShown > 1 ? 300 : Math.max(120, 260 * (1 - missedShown)))
+    missedAway.restart()
+  }
   function peekShown(px) { return Math.max(0, Math.min(1, 1 - (panelSpan - px) / Math.max(1, panelAway))) }
   onMissedPeekPxChanged: if (missedPeeking) missedShown = peekShown(missedPeekPx)
 
@@ -3635,7 +3647,9 @@ Item {
       // and never resized under an animation; the height stays full so the
       // deck can grow downwards without the window changing size either.
       anchors { top: true; bottom: true; right: true }
-      implicitWidth: clipper.width + Style.space(10)
+      // Plus the panel's stretch past fully in, or it is cut off at the
+      // surface's left edge.
+      implicitWidth: clipper.width + Style.space(10) + service.missedStretch
 
       // Only the deck takes input; the rest of the surface stays
       // click-through. Tracking the item keeps the region honest as the deck
@@ -4158,7 +4172,7 @@ Item {
                   // every arrival's layout pass to forty panel cards - a
                   // binding loop that left the deck ignoring the pointer.
                   readonly property var deckPlace: live && service.missedVisible ? service.placements[key] : null
-                  readonly property real away: live && deckPlace ? 1 - service.missedShown : 0
+                  readonly property real away: live && deckPlace ? Math.max(0, 1 - service.missedShown) : 0
                   readonly property real deckY: deckPlace ? deckPlace.y - service.scrollY : 0
                   readonly property real panelY: missedViewport.y + y - service.missedScroll
                   scale: place.scale + ((deckPlace ? deckPlace.scale : place.scale) - place.scale) * away
