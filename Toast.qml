@@ -10,6 +10,7 @@ import QtQuick.Controls as QQC
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 
 import qs.Ui
 
@@ -62,10 +63,10 @@ Item {
   signal silenceRequested()
 
   readonly property bool critical: row.urgency === 2
-  readonly property color dimColor: Qt.darker(Color.notifications.text, 1.4)
-  readonly property color bodyColor: Qt.darker(Color.notifications.text, 1.15)
-  readonly property color accentColor: critical ? Color.urgent
-                                               : (row.urgency === 0 ? dimColor : Color.notifications.countdown)
+  readonly property color dimColor: Qt.darker(Commons.Color.notifications.text, 1.4)
+  readonly property color bodyColor: Qt.darker(Commons.Color.notifications.text, 1.15)
+  readonly property color accentColor: critical ? Commons.Color.urgent
+                                               : (row.urgency === 0 ? dimColor : Commons.Color.notifications.countdown)
   // The card's edge is the window's edge: the colour or gradient, opacity and
   // width the theme gives Hyprland's active border, so a notification sits
   // on the desktop the way a window does. The width falls back to
@@ -73,7 +74,7 @@ Item {
   // what the windows are actually drawn with.
   property int windowBorderWidth: 2
   readonly property var windowBorderSpec: Border.hyprlandActiveSpec(
-      Color.notifications.border, windowBorderWidth)
+      Commons.Color.notifications.border, windowBorderWidth)
   // A card underneath the front one of a shut stack is only an edge peeking
   // out; a full-strength border on each of those draws three outlines where
   // there is one message. Those, and only those, fade.
@@ -102,8 +103,8 @@ Item {
   readonly property real edgeBottom: Border.bottom(windowBorderSpec)
   readonly property real edgeLeft: Border.left(windowBorderSpec)
   // What a quiet control is filled with instead of outlined.
-  readonly property color softFill: Qt.rgba(Color.notifications.text.r, Color.notifications.text.g,
-                                            Color.notifications.text.b, 0.09)
+  readonly property color softFill: Qt.rgba(Commons.Color.notifications.text.r, Commons.Color.notifications.text.g,
+                                            Commons.Color.notifications.text.b, 0.09)
   readonly property bool hasBody: String(row.body || "").length > 0
   readonly property real contentPaddingY: hasBody ? Style.space(10) : Style.space(7)
   // A card behind the front one in a collapsed deck is a shape, not a message:
@@ -438,7 +439,7 @@ Item {
       width: body.width
       height: body.height
       radius: Style.cornerRadius
-      color: Color.notifications.background
+      color: Commons.Color.notifications.background
       borderSpec: plateRing.surfaceSpec
 
       Ring {
@@ -533,7 +534,7 @@ Item {
           Rectangle {
             anchors.fill: parent
             visible: thumb.mono && picture.status === Image.Ready
-            color: Color.notifications.text
+            color: Commons.Color.notifications.text
             opacity: 0.85
             layer.enabled: visible
             layer.effect: MultiEffect { maskEnabled: true; maskSource: picture }
@@ -588,7 +589,7 @@ Item {
                      - (titleMarks.visible ? titleMarks.width + Style.space(7) : 0)
                      - Style.space(8))
               text: String(card.row.summary || "")
-              color: card.critical ? Color.urgent : Color.notifications.text
+              color: card.critical ? Commons.Color.urgent : Commons.Color.notifications.text
               font.family: "Liberation Sans"
               font.pixelSize: Style.font.title * card.fontScale
               // Regular weight. The title is already the brightest thing on the
@@ -619,7 +620,7 @@ Item {
                   textFormat: Text.PlainText
                   required property var modelData
                   text: modelData
-                  color: Color.notifications.text
+                  color: Commons.Color.notifications.text
                   opacity: 0.9
                   font.family: Style.font.family
                   font.pixelSize: Style.font.body * card.fontScale
@@ -693,7 +694,7 @@ Item {
                   horizontalPadding: Style.space(4)
                   verticalPadding: Style.space(2)
                   implicitWidth: implicitHeight
-                  foreground: Color.notifications.text
+                  foreground: Commons.Color.notifications.text
                   fontFamily: Style.font.family
                   fontSize: Style.font.caption * card.fontScale
                   // The deck owns pointer hover; mirror its coordinates into the
@@ -767,7 +768,7 @@ Item {
               visible: !bodyBox.overflow
               textFormat: Text.RichText
               text: Markup.colourLinks(String(card.row.bodyRich || card.row.body || ""),
-                                       String(Color.notifications.countdown))
+                                       String(Commons.Color.notifications.countdown))
               color: card.bodyColor
               font.family: "Liberation Sans"
               font.pixelSize: Style.font.title * card.fontScale
@@ -884,7 +885,7 @@ Item {
                 id: replyInput
                 anchors.fill: parent
                 anchors.topMargin: Style.space(3)
-                foreground: Color.notifications.text
+                foreground: Commons.Color.notifications.text
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body * card.fontScale
                 leftPadding: horizontalPadding + Border.left(_borderSpec)
@@ -979,7 +980,7 @@ Item {
                   visible: replyInput.text.length > 0
                   text: "Send"
                   bordered: false
-                  foreground: Color.notifications.text
+                  foreground: Commons.Color.notifications.text
                   fontFamily: Style.font.family
                   fontSize: Style.font.body * card.fontScale
                   onClicked: { card.replySent(replyInput.text); replyInput.text = "" }

@@ -16,6 +16,7 @@ import Quickshell.Hyprland
 import Quickshell.Services.Notifications
 import Quickshell.Services.Pipewire
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 import "Store.js" as Store
@@ -84,7 +85,7 @@ Item {
   // notification background rather than a setting: if the card is light, the
   // icon meant for light backgrounds is the one that will read on it.
   readonly property bool lightTheme: {
-    var c = Color.notifications.background
+    var c = Commons.Color.notifications.background
     return (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) > 0.5
   }
 
@@ -3876,7 +3877,7 @@ Item {
           radius: width / 2
           height: Math.max(Style.space(24), deck.height * deck.height / Math.max(1, service.layout.height))
           y: service.scrollMax > 0 ? (deck.height - height) * service.scrollY / service.scrollMax : 0
-          color: Color.notifications.text
+          color: Commons.Color.notifications.text
           opacity: service.pointerIn ? 0.45 : 0.2
           Behavior on opacity { NumberAnimation { duration: 150 } }
         }
@@ -4018,14 +4019,14 @@ Item {
             width: parent.width
             height: Math.max(missedTitle.implicitHeight, missedClear.implicitHeight) + Style.space(26)
             radius: Style.cornerRadius
-            color: Color.notifications.background
+            color: Commons.Color.notifications.background
             // The cards' own edge - the window border - so the heading reads
             // as one of them.
             borderSpec: headerRing.surfaceSpec
 
             Ring {
               id: headerRing
-              spec: Border.hyprlandActiveSpec(Color.notifications.border,
+              spec: Border.hyprlandActiveSpec(Commons.Color.notifications.border,
                                               service.windowBorderWidth)
               radius: missedHeader.radius
             }
@@ -4041,7 +4042,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Notifications"
                 textFormat: Text.PlainText
-                color: Color.notifications.text
+                color: Commons.Color.notifications.text
                 font.family: "Liberation Sans"
                 font.pixelSize: Style.font.title * 1.3 * service.fontScale
               }
@@ -4051,7 +4052,7 @@ Item {
                 visible: service.missedLoaded && service.missedCount > 0
                 text: String(service.missedCount)
                 textFormat: Text.PlainText
-                color: Qt.darker(Color.notifications.text, 1.4)
+                color: Qt.darker(Commons.Color.notifications.text, 1.4)
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body * service.fontScale
               }
@@ -4068,7 +4069,7 @@ Item {
                 visible: service.missedCount > 0
                 text: "Clear all"
                 bordered: false
-                foreground: Color.notifications.text
+                foreground: Commons.Color.notifications.text
                 fontFamily: Style.font.family
                 fontSize: Style.font.bodySmall * service.fontScale
                 horizontalPadding: Style.space(12)
@@ -4079,7 +4080,7 @@ Item {
                 text: "✕"
                 bordered: false
                 implicitWidth: implicitHeight
-                foreground: Color.notifications.text
+                foreground: Commons.Color.notifications.text
                 fontFamily: Style.font.family
                 fontSize: Style.font.bodySmall * service.fontScale
                 horizontalPadding: Style.space(6)
@@ -4304,7 +4305,7 @@ Item {
             radius: width / 2
             height: Math.max(Style.space(24), missedViewport.height * missedViewport.height
                                               / Math.max(1, service.missedLayout.height))
-            color: Color.notifications.text
+            color: Commons.Color.notifications.text
             opacity: service.missedPointerIn ? 0.45 : 0.2
           }
 
@@ -4318,7 +4319,7 @@ Item {
             text: "Nothing you missed."
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            color: Qt.darker(Color.notifications.text, 1.4)
+            color: Qt.darker(Commons.Color.notifications.text, 1.4)
             font.family: Style.font.family
             font.pixelSize: Style.font.body * service.fontScale
           }
