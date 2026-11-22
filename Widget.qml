@@ -22,11 +22,11 @@ import qs.Ui
 
 BarWidget {
   id: pager
-  moduleName: "io.github.dragosol.hyprbell"
+  moduleName: "io.github.dragosol.omapager-pro"
 
   // The daemon, if it is up. Everything that reads it degrades to empty rather
   // than breaking the bar.
-  readonly property var service: bar && bar.shell ? bar.shell.serviceFor("io.github.dragosol.hyprbell") : null
+  readonly property var service: bar && bar.shell ? bar.shell.serviceFor("io.github.dragosol.omapager-pro") : null
   readonly property bool silenced: service ? service.doNotDisturb : false
   readonly property bool sharingActive: service ? service.sharingActive : false
   readonly property bool sharingOfferPending: service ? service.sharingOfferPending : false
@@ -410,6 +410,7 @@ BarWidget {
   // Return types are spelled out because Quickshell wants them, and `string`
   // rather than `void` because this Qt's QML grammar rejects `void` outright.
   IpcHandler {
+    id: panelIpc
     target: "hyprbell.panel"
     function open(): string { pager.open(); return "open" }
     function openSettings(): string { pager.openSettings(); return "settings" }
@@ -457,6 +458,18 @@ BarWidget {
                               cardX: panel.cardOrigin.x, cardY: panel.cardOrigin.y,
                               cw: panel.contentWidth, ch: panel.contentHeight })
     }
+  }
+
+  // The name it had as Omapager Pro, for keybindings written then.
+  IpcHandler {
+    target: "omapager.panel"
+    function open(): string { return panelIpc.open() }
+    function openSettings(): string { return panelIpc.openSettings() }
+    function line(): string { return panelIpc.line() }
+    function close(): string { return panelIpc.close() }
+    function toggle(): string { return panelIpc.toggle() }
+    function expand(key: string): string { return panelIpc.expand(key) }
+    function state(): string { return panelIpc.state() }
   }
 
   // ------------------------------------------------------------- the bar

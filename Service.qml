@@ -4008,6 +4008,7 @@ Item {
   }
 
   IpcHandler {
+    id: hyprbellIpc
     target: "hyprbell"
     function count(): string { return String(toasts.count) }
     // What the daemon thinks is true, for a script to check against what it
@@ -4246,6 +4247,33 @@ Item {
         service.commit(function() { service.stacking = mode })
       return service.stacking
     }
+  }
+
+  // Hyprbell was Omapager Pro, and keybindings and scripts written for it call
+  // the target `omapager`. It still answers, with the commands it had then.
+  IpcHandler {
+    target: "omapager"
+    function count(): string { return hyprbellIpc.count() }
+    function probe(): string { return hyprbellIpc.probe() }
+    function clear(): string { return hyprbellIpc.clear() }
+    function refreshFullscreen(): string { return hyprbellIpc.refreshFullscreen() }
+    function swipe(px: string): string { return hyprbellIpc.swipe(px) }
+    function missed(how: string): string { return hyprbellIpc.missed(how) }
+    function edge(line: string): string { return hyprbellIpc.edge(line) }
+    function scroll(px: string): string { return hyprbellIpc.scroll(px) }
+    function dnd(): string { return hyprbellIpc.dnd() }
+    function expand(): string { return hyprbellIpc.expand() }
+    function snooze(minutes: string): string { return hyprbellIpc.snooze(minutes) }
+    function snoozeAll(minutes: string): string { return hyprbellIpc.snoozeAll(minutes) }
+    function unsnooze(key: string): string { return hyprbellIpc.unsnooze(key) }
+    function snoozes(): string { return hyprbellIpc.snoozes() }
+    function codes(state: string): string { return hyprbellIpc.codes(state) }
+    function open(deckKey: string): string { return hyprbellIpc.open(deckKey) }
+    function act(identifier: string): string { return hyprbellIpc.act(identifier) }
+    function offer(kind: string): string { return hyprbellIpc.offer(kind) }
+    function align(side: string): string { return hyprbellIpc.align(side) }
+    function reply(text: string): string { return hyprbellIpc.reply(text) }
+    function stack(mode: string): string { return hyprbellIpc.stack(mode) }
   }
 
   // ---------------------------------------------------- the stock keybindings

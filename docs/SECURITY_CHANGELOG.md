@@ -2,6 +2,13 @@
 
 ## Hyprbell (formerly Omapager Pro)
 
+- 1.6.0: Hyprbell ships as an update to the Omapager Pro listing, under its
+  original id `io.github.dragosol.omapager-pro`. Nothing about storage moves:
+  state stays in `~/.local/state/omarchy/hyprbell/`, and the one-time move from
+  the old Omapager folders is unchanged. The IPC targets `omapager` and
+  `omapager.panel` answer again, as plain forwarders to `hyprbell` and
+  `hyprbell.panel` with the same commands Omapager Pro had.
+
 - 1.5.2: a screenshot editor named in `omarchy-exec-argv` now gets exactly one
   argument, the image: an absolute local .png/.jpg/.jpeg/.webp path, or for
   omasnap a `file:///` URL of one. Those are the only two shapes Omarchy has

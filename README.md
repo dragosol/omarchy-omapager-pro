@@ -16,14 +16,21 @@ Hyprbell started as a fork of Neil Jagdish Patel's
 grouping, inline actions, codes, replies, snoozing, screen-sharing detection.
 See [Credits](#credits).
 
-**Formerly Omapager Pro.** Same plugin, new name and a new id
-(`io.github.dragosol.hyprbell`). Coming from Omapager Pro: install Hyprbell,
-enable it, and remove Omapager Pro. Your history, snoozes and settings folder
-move across by themselves the first time Hyprbell runs. The IPC target is now
-`hyprbell` (`omarchy-shell hyprbell clear`, and so on), so update any keybinding
-that called `omapager`. The touchpad rule you may have installed,
-`70-omapager-touchpad.rules`, grants the same access and keeps working; there is
-no need to reinstall it under the new name.
+**Formerly Omapager Pro.** Same plugin and same id
+(`io.github.dragosol.omapager-pro`), new name. If you have Omapager Pro,
+`omarchy plugin update` brings you Hyprbell; there is nothing to reinstall.
+Your history, snoozes, settings and icons folder move across by themselves the
+first time it runs. The IPC target is now `hyprbell` (`omarchy-shell hyprbell
+clear`, and so on); `omapager` still answers, so existing keybindings keep
+working. The touchpad rule you may have installed, `70-omapager-touchpad.rules`,
+grants the same access and keeps working too.
+
+If you installed Hyprbell from `dragosol/omarchy-hyprbell` under the id
+`io.github.dragosol.omapager-pro`, switch to this one: remove that plugin, then
+install as below. Both read the same state folder, so history, snoozes and
+rules carry over; only the bar-widget options in `shell.json` need copying
+across to the new entry. Don't run both at once - only one notification daemon
+can.
 
 ## What Hyprbell adds
 
@@ -160,14 +167,14 @@ Find Hyprbell in the [Omarchy Plugin Marketplace](https://omarchyplugins.com/)
 and run its install command:
 
 ```bash
-omarchy plugin add https://github.com/dragosol/omarchy-hyprbell.git
+omarchy plugin add https://github.com/dragosol/omarchy-omapager-pro.git
 ```
 
 #### Via Git
 
 ```bash
-git clone https://github.com/dragosol/omarchy-hyprbell.git \
-  ~/.config/omarchy/plugins/io.github.dragosol.hyprbell
+git clone https://github.com/dragosol/omarchy-omapager-pro.git \
+  ~/.config/omarchy/plugins/io.github.dragosol.omapager-pro
 ```
 
 ### 2. Enable Hyprbell
@@ -178,7 +185,7 @@ have it - and enable Hyprbell. Only one notification daemon can run at a time.
 ```bash
 omarchy-shell shell rescanPlugins
 omarchy plugin disable omarchy.notifications
-omarchy plugin enable io.github.dragosol.hyprbell --section center --after omarchy.indicators
+omarchy plugin enable io.github.dragosol.omapager-pro --section center --after omarchy.indicators
 omarchy restart shell
 ```
 
@@ -208,10 +215,11 @@ other helpers, with that one device node and nothing else. Everything else
 works without it, including the hot corner, left pulls and the `missed`
 command.
 
-To take the rule away again:
+To take the rule away again (from Omapager Pro it may be called
+`70-omapager-touchpad.rules`):
 
 ```bash
-sudo rm /etc/udev/rules.d/70-hyprbell-touchpad.rules
+sudo rm -f /etc/udev/rules.d/70-hyprbell-touchpad.rules /etc/udev/rules.d/70-omapager-touchpad.rules
 sudo udevadm control --reload
 sudo udevadm trigger --subsystem-match=input --action=change
 ```
@@ -219,7 +227,7 @@ sudo udevadm trigger --subsystem-match=input --action=change
 ### Updates
 
 ```bash
-git -C ~/.config/omarchy/plugins/io.github.dragosol.hyprbell pull --ff-only
+omarchy plugin update io.github.dragosol.omapager-pro
 omarchy restart shell
 ```
 
@@ -228,8 +236,8 @@ Do not use `omarchy refresh shell`, which resets your shell configuration.
 ### Remove Hyprbell
 
 ```bash
-omarchy plugin disable io.github.dragosol.hyprbell
-omarchy plugin remove io.github.dragosol.hyprbell
+omarchy plugin disable io.github.dragosol.omapager-pro
+omarchy plugin remove io.github.dragosol.omapager-pro
 omarchy plugin enable omarchy.notifications
 omarchy restart shell
 ```
@@ -249,7 +257,7 @@ to choose a notification display, choose when to step aside for fullscreen
 windows, toggle countdown animation or control screen-sharing snooze
 suggestions.
 
-Changes save to the `io.github.dragosol.hyprbell` bar-widget entry in
+Changes save to the `io.github.dragosol.omapager-pro` bar-widget entry in
 `~/.config/omarchy/shell.json`. You can edit the other options there too.
 `edgeSpacing`, `fetchRemoteIcons` and `requireSandbox` are config-only. Defaults
 below apply to new configurations, not choices you have already saved.
@@ -289,7 +297,7 @@ Add options to the existing widget entry. This example is not a complete
 
 ```json
 {
-  "id": "io.github.dragosol.hyprbell",
+  "id": "io.github.dragosol.omapager-pro",
   "edgeSpacing": 12,
   "showCountdown": false,
   "fontScale": 100,
@@ -540,7 +548,7 @@ See [Security](#security) for icon-fetching and sandbox behaviour.
 ## Contributing
 
 Issues and pull requests are welcome at
-[dragosol/omarchy-hyprbell](https://github.com/dragosol/omarchy-hyprbell).
+[dragosol/omarchy-omapager-pro](https://github.com/dragosol/omarchy-omapager-pro).
 The [development guide](docs/DEVELOPING.md) covers how the daemon is built and
 tested; `tests/virtual_touchpad.py` drives real two-finger swipes through
 libinput and Hyprland for testing gestures.
