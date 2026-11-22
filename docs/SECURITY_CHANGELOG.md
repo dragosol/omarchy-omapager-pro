@@ -8,6 +8,12 @@
   the old Omapager folders is unchanged. The IPC targets `omapager` and
   `omapager.panel` answer again, as plain forwarders to `hyprbell` and
   `hyprbell.panel` with the same commands Omapager Pro had.
+- Links open through a detached `/usr/bin/xdg-open` with the validated URL as
+  its only argument, instead of `Qt.openUrlExternally`. On Qt 6.12 that call
+  asks xdg-desktop-portal first and waits for the answer on the GUI thread, so
+  with a portal that was not answering, every click on a notification with a
+  link froze the whole shell for 25 seconds. The URL rules are unchanged, and
+  an invariant now refuses `Qt.openUrlExternally` anywhere in the plugin.
 
 - 1.5.2: a screenshot editor named in `omarchy-exec-argv` now gets exactly one
   argument, the image: an absolute local .png/.jpg/.jpeg/.webp path, or for

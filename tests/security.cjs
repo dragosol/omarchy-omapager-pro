@@ -10,6 +10,25 @@ for (const u of bad) {
 }
 for (const u of ['https://example.com','http://example.com/path?q=1','https://xn--bcher-kva.example','https://example.com/a%40b','mailto:user@example.com']) assert.ok(S.safeExternalUrl(u),u);
 assert.equal(S.safeHttpUrl('HTTPS://Example.COM.:443/a'),'https://example.com:443/a');
+
+// Links open through a detached xdg-open, never Qt.openUrlExternally (which the
+// loader stubs to throw): on Qt 6.12 that waits on xdg-desktop-portal in the GUI
+// thread, and a portal that does not answer froze the shell for 25 s per click.
+{
+ const spawned=[], spawn=a=>spawned.push(a);
+ assert.equal(S.openExternalUrl('https://github.com/omacom/omarchy-plugin-marketplace/issues/15645',spawn),true);
+ assert.equal(S.openExternalUrl('mailto:user@example.com',spawn),true);
+ assert.deepEqual(JSON.parse(JSON.stringify(spawned)),[['/usr/bin/xdg-open','https://github.com/omacom/omarchy-plugin-marketplace/issues/15645'],
+                           ['/usr/bin/xdg-open','mailto:user@example.com']]);
+ for (const u of bad) assert.equal(S.openExternalUrl(u,spawn),false,u);
+ assert.equal(S.openExternalUrl('-e',spawn),false);
+ assert.equal(S.openExternalUrl('--help https://example.com',spawn),false);
+ assert.equal(spawned.length,2,'nothing unsafe is launched');
+ assert.equal(S.openExternalUrl('https://example.com'),false,'no launcher, nothing opened');
+ for (const [, url] of spawned) assert.ok(/^(?:https?|mailto):/.test(url),'never reads as an option');
+ for (const f of fs.readdirSync(__dirname+'/..').filter(f=>/\.(?:qml|js)$/.test(f)))
+  assert.ok(!fs.readFileSync(__dirname+'/../'+f,'utf8').includes('Qt.openUrlExternally('),f+' calls Qt.openUrlExternally');
+}
 assert.equal(S.safeMailtoUrl('mailto:user@example.com?attach=/etc/passwd'),'');
 for(const payload of ['<img src="file:///etc/passwd">','<svg><image href="https://example.com"/></svg>','<script>alert(1)</script>','<iframe src="x">','https://example.com/"onmouseover="x']) {
  const rendered=M.render(payload);

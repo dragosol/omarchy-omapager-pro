@@ -3639,8 +3639,8 @@ Item {
     // has to be a hostname by the same test hyprbell-icon uses before it
     // will fetch anything, not merely a string with a dot in it.
     else if (Markup.hostname(row.source))
-      Security.openExternalUrl("https://" + Markup.hostname(row.source) + "/")
-    else if (String(row.link || "")) Security.openExternalUrl(String(row.link))
+      openUrl("https://" + Markup.hostname(row.source) + "/")
+    else if (String(row.link || "")) openUrl(String(row.link))
   }
 
   // ------------------------------------------------------------- replying
@@ -3862,6 +3862,12 @@ Item {
     }
   }
 
+  // Every link the daemon opens, through the one URL broker. Detached, so
+  // nothing about the browser or the desktop portal can hold up the shell.
+  function openUrl(raw) {
+    return Security.openExternalUrl(raw, function(argv) { Quickshell.execDetached(argv) })
+  }
+
   function takeOffer(kind, value, key) {
     if (kind === "code") {
       var index = rowIndexFor(String(key || ""))
@@ -3869,7 +3875,7 @@ Item {
       copyText(value, true)
     }
     else if (kind === "phone") copyText(value, false)
-    else Security.openExternalUrl(value)
+    else openUrl(value)
 
     // A copied code is a finished notification: it exists to carry six digits
     // to a login box, and once they are on the clipboard there is nothing left

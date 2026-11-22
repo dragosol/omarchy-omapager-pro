@@ -308,7 +308,8 @@ and arrivals while collapsed do not reveal it.
 - **`Markup.js` renders.** Everything is escaped, then a fixed tag list is put
   back — no `img`, so a body cannot pull a remote image. An anchor survives only
   if `linkable()` vouches for its scheme; `Toast.onLinkActivated` asks again
-  before `Qt.openUrlExternally`. The label is the sender's too, so a `file://`
+  before a detached `xdg-open` (never `Qt.openUrlExternally`, which blocks the
+  shell on the desktop portal). The label is the sender's too, so a `file://`
   href is free to read like an ordinary web link.
 
 Adding anything that fetches, opens, or writes a path from notification text

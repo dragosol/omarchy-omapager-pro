@@ -9,7 +9,10 @@ integration stability, as the plan requires.
 2. `Markup` escapes content and restores a small formatting/anchor allowlist.
    Summary and fallback text use PlainText. Restored rich text is regenerated.
 3. Every URL sink enters `Security.openExternalUrl`. It validates again immediately
-   before the sole `Qt.openUrlExternally` call. Detection is not authorization.
+   before handing exactly `["/usr/bin/xdg-open", url]` to a detached launcher.
+   `Qt.openUrlExternally` is never used: from Qt 6.12 it waits on
+   xdg-desktop-portal in the GUI thread, which froze the shell for 25 s per
+   click when the portal was not answering. Detection is not authorization.
 4. `Store.sanitiseForPersistence` separates live and persisted rows. Detected-code
    rows become generic placeholders; sender metadata, raw/derived body and links
    cannot carry alternate encodings into files. Python independently sanitises

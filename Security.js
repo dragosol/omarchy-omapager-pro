@@ -49,9 +49,23 @@ function hostOf(raw) {
   var u=safeHttpUrl(raw), m=u.match(/^https?:\/\/([^/:?#]+)/)
   return m ? m[1] : ''
 }
-function openExternalUrl(raw) {
+// Opened by a detached xdg-open, never Qt.openUrlExternally. From Qt 6.12 that
+// asks xdg-desktop-portal first, on the GUI thread, and waits up to 25 seconds
+// for an answer before falling back to xdg-open - so with a portal that is not
+// answering, every click on a link froze the whole shell, notifications and
+// bar included, for 25 seconds. `spawn` is the caller's detached launcher
+// (Quickshell.execDetached); the URL is already validated and starts with
+// http:, https: or mailto:, so it can never read as an option.
+var OPEN_URL_COMMAND='/usr/bin/xdg-open'
+function openUrlArgv(raw) {
   var safe=safeExternalUrl(raw)
-  return safe ? Qt.openUrlExternally(safe) : false
+  return safe ? [OPEN_URL_COMMAND, safe] : null
+}
+function openExternalUrl(raw, spawn) {
+  var argv=openUrlArgv(raw)
+  if (!argv || typeof spawn !== 'function') return false
+  spawn(argv)
+  return true
 }
 
 // App names are claims, not authentication: any program can send a

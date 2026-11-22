@@ -20,7 +20,8 @@ for path in [*ROOT.glob('*.qml'),*ROOT.glob('*.js'),*(ROOT/'bin').glob('*')]:
     if not path.is_file() or path.is_symlink():continue
     text=path.read_text()
     rel=str(path.relative_to(ROOT))
-    if 'Qt.openUrlExternally' in text and rel!='Security.js':errors.append(rel+': URL broker bypass')
+    if 'Qt.openUrlExternally(' in text:errors.append(rel+': Qt.openUrlExternally blocks the shell on the desktop portal; use Security.openExternalUrl')
+    if re.search(r'Security\.openExternalUrl\([^,()]*\)',text):errors.append(rel+': Security.openExternalUrl without a detached launcher')
     if re.search(r'''["'](?:ba)?sh["']\s*,\s*["']-c["']''',text):errors.append(rel+': command shell')
     if re.search(r'urllib\.request|OPENER\.open|urlopen\(',text):errors.append(rel+': unpinned network client')
     if 'console.log(' in text:errors.append(rel+': notification logging')

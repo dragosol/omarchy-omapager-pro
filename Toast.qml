@@ -789,7 +789,7 @@ Item {
               // is one regex away from being wrong, and the cost of the check
               // is a function call.
               onLinkActivated: function(url) {
-                Security.openExternalUrl(url)
+                Security.openExternalUrl(url, function(argv) { Quickshell.execDetached(argv) })
               }
             }
 
